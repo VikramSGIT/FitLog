@@ -267,6 +267,14 @@ function Home() {
         }}
         styles={{
           header: { display: 'none' },
+          body: {
+            padding: 0,
+            height: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            flex: 1,
+            minHeight: 0
+          },
           content: {
             background: surfaces.panel,
             color: baseTextColor,

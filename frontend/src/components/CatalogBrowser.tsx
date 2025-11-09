@@ -158,6 +158,9 @@ export default function CatalogBrowser({ embedded = false, onClose }: CatalogBro
     try {
       const created = await api.createExercise(day.id, { name: item.name, position, catalogId: item.id })
       addExerciseLocal({ ...created, sets: [] })
+      if (embedded) {
+        onClose?.()
+      }
     } catch (err) {
       console.error(err)
       alert('Failed to add exercise.')

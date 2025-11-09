@@ -4,7 +4,10 @@ RUN apk add --no-cache build-base ca-certificates && update-ca-certificates
 COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 COPY backend/ ./
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/server ./cmd/server
+ARG TARGETOS=linux
+ARG TARGETARCH
+ENV CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH:-amd64}
+RUN go build -o /out/server ./cmd/server
 
 FROM gcr.io/distroless/static:nonroot
 COPY --from=builder /out/server /server

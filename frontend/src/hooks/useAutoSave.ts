@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { useWorkoutStore } from '@/store/useWorkoutStore'
 
-// onSave should return true if it actually persisted changes, false if there was nothing to save
-export function useAutoSave<T>(value: T, onSave: (value: T) => Promise<boolean>, delay = 60000) {
+export function useAutoSave<T>(value: T, onSave: (value: T) => Promise<void>, delay = 60000) {
   const setSaving = useWorkoutStore((state) => state.setSaving)
   const registerAutoSave = useWorkoutStore((state) => state.registerAutoSave)
   const timer = useRef<number | null>(null)
@@ -15,14 +14,9 @@ export function useAutoSave<T>(value: T, onSave: (value: T) => Promise<boolean>,
         setSaving('saving', mode)
       }
       try {
-        const didSave = await onSave(latestValue.current)
+        await onSave(latestValue.current)
         if (manageStatus) {
-          if (didSave) {
           setSaving('saved', mode)
-          } else {
-            // nothing changed; return to idle without success toast
-            setSaving('idle', mode)
-          }
         }
       } catch (err) {
         if (manageStatus) {
@@ -54,8 +48,7 @@ export function useAutoSave<T>(value: T, onSave: (value: T) => Promise<boolean>,
         window.clearTimeout(timer.current)
         timer.current = null
       }
-      const didSave = await onSave(latestValue.current)
-      return didSave
+      await triggerSave('manual', false)
     }
     const unregister = registerAutoSave(flush)
     return () => {

@@ -9,11 +9,11 @@ export type WorkoutState = {
   saving: 'idle' | 'saving' | 'saved' | 'error'
   lastSaveMode: SaveMode | null
   lastSavedAt: number | null
-  autoSaveHandlers: Set<() => Promise<boolean>>
+  autoSaveHandlers: Set<() => Promise<void>>
   setDay: (day: DayWithDetails | null) => void
   setDayLoading: (loading: boolean) => void
   setSaving: (state: WorkoutState['saving'], mode?: SaveMode) => void
-  registerAutoSave: (handler: () => Promise<boolean>) => () => void
+  registerAutoSave: (handler: () => Promise<void>) => () => void
   flushAutoSaves: (mode?: SaveMode) => Promise<void>
   // Local state update helpers
   addExerciseLocal: (ex: Exercise) => void
@@ -70,21 +70,15 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
     const handlers = Array.from(get().autoSaveHandlers)
     const setSaving = get().setSaving
     if (handlers.length === 0) {
-      setSaving('idle', mode)
+      setSaving('saved', mode)
       return
     }
     setSaving('saving', mode)
     try {
-      let didSaveAny = false
       for (const fn of handlers) {
-        const did = await fn()
-        if (did) didSaveAny = true
+        await fn()
       }
-      if (didSaveAny) {
       setSaving('saved', mode)
-      } else {
-        setSaving('idle', mode)
-      }
     } catch (err) {
       console.error(err)
       setSaving('error', mode)

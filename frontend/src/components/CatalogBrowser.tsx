@@ -222,7 +222,7 @@ export default function CatalogBrowser({ embedded = false, onClose }: CatalogBro
                     onClick={() => addToDay(it)}
                     disabled={!canAddToDay}
                     style={{
-                      backgroundImage: accentGradient,
+                      background: theme.colorScheme === 'light' ? 'var(--mantine-color-primary-5)' : 'var(--mantine-color-primary-6)',
                       color: buttonTextColor,
                       border: 'none'
                     }}
@@ -235,7 +235,7 @@ export default function CatalogBrowser({ embedded = false, onClose }: CatalogBro
                     onClick={() => addToDay(it)}
                     disabled={!canAddToDay}
                     style={{
-                      backgroundImage: accentGradient,
+                      background: theme.colorScheme === 'light' ? 'var(--mantine-color-primary-5)' : 'var(--mantine-color-primary-6)',
                       color: buttonTextColor,
                       border: 'none'
                     }}
@@ -319,10 +319,9 @@ export default function CatalogBrowser({ embedded = false, onClose }: CatalogBro
             onClick={() => setShowFilters((v) => !v)}
             aria-label="Toggle filters"
             style={{
-              backgroundImage: (q || type || bodyPart || equipment || level || muscle) ? accentGradient : 'none',
-              background: (q || type || bodyPart || equipment || level || muscle) ? undefined : (theme.colorScheme === 'light' ? '#ffffff' : surfaces.card),
+              background: theme.colorScheme === 'light' ? '#ffffff' : surfaces.card,
               border: `1px solid ${surfaces.border}`,
-              color: (q || type || bodyPart || equipment || level || muscle) ? buttonTextColor : baseTextColor
+              color: baseTextColor
             }}
           >
             <IconAdjustments size={20} />

@@ -47,13 +47,14 @@ export default function ExerciseList({ onAddFromCatalog }: ExerciseListProps) {
   }
 
   return (
-    <Stack gap={isMobile ? 'xs' : 'md'} style={{ flex: 1, minHeight: 0, padding: 0, margin: 0 }}>
-      <Group justify="space-between" align="flex-start" wrap="wrap" gap="sm">
+    <Stack gap={isMobile ? 'sm' : 'lg'} style={{ flex: 1, minHeight: 0, padding: 0, margin: 0 }}>
+      <Group justify="space-between" align="flex-start" wrap="wrap" gap="md">
         <Stack gap={4} style={{ flex: 1, minWidth: 220 }}>
           <Title order={3}>Exercises</Title>
           <Text size="sm" c="dimmed">
             Build out today's session with warmups, strength work, and accessories.
           </Text>
+          {/* Date picker and rest toggle moved to HeaderBar */}
         </Stack>
         <Group gap="sm" wrap="wrap">
           {isMobile ? (
@@ -150,7 +151,7 @@ export default function ExerciseList({ onAddFromCatalog }: ExerciseListProps) {
           <Paper
             withBorder
             radius="lg"
-            p="sm"
+            p="lg"
             style={{
               backdropFilter: 'none',
               borderColor: surfaces.border
@@ -171,7 +172,7 @@ export default function ExerciseList({ onAddFromCatalog }: ExerciseListProps) {
           <Paper
             withBorder
             radius="lg"
-            p="sm"
+            p="lg"
             style={{
               backdropFilter: 'none',
               borderColor: surfaces.border
@@ -189,7 +190,7 @@ export default function ExerciseList({ onAddFromCatalog }: ExerciseListProps) {
             </Stack>
           </Paper>
         ) : (
-          <Stack gap="sm">
+          <Stack gap="md">
         {exercises.map((ex: Exercise) => (
               <motion.div
                 key={ex.id}

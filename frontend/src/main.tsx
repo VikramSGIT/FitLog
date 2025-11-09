@@ -139,15 +139,6 @@ function Root() {
             '*': {
               fontFamily: 'inherit'
             },
-            // Prevent press-down shift on all buttons/icons across the app
-            '.mantine-Button-root:active, .mantine-ActionIcon-root:active, .mantine-Button-root[data-active], .mantine-ActionIcon-root[data-active]': {
-              transform: 'none !important'
-            },
-            // Keep outline/border changes from affecting layout
-            '.mantine-Button-root, .mantine-ActionIcon-root': {
-              outlineOffset: 2,
-              borderWidth: 1
-            },
             body: {
               fontFamily: '"Open Sans", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
               background: preset.surfaces.app,

@@ -2,10 +2,9 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { api, Exercise, WorkoutSet } from '@/api/client'
 import { useWorkoutStore } from '@/store/useWorkoutStore'
 import { useAutoSave } from '@/hooks/useAutoSave'
-import { ActionIcon, Group, Paper, Stack, Text, TextInput, Tooltip, useMantineTheme } from '@mantine/core'
+import { ActionIcon, Badge, Group, Paper, Stack, Text, TextInput, Tooltip, useMantineTheme } from '@mantine/core'
 import { IconTrash } from '@tabler/icons-react'
 import { DEFAULT_SURFACES, ThemeSurfaces } from '@/theme'
-import { AUTO_SAVE_DELAY_MS } from '@/config'
 
 function SetRow({ set }: { set: WorkoutSet }) {
   const { updateSetLocal, removeSetLocal } = useWorkoutStore()
@@ -44,14 +43,13 @@ function SetRow({ set }: { set: WorkoutSet }) {
       }
     }
     if (!('reps' in updates) && !('weightKg' in updates)) {
-      return false
+      return
     }
     const updated = await api.updateSet(set.id, updates)
     updateSetLocal(set.id, { reps: updated.reps, weightKg: updated.weightKg })
-    return true
   }, [set.id, set.reps, set.weightKg, updateSetLocal])
 
-  useAutoSave(parsed, async (v) => save(v), AUTO_SAVE_DELAY_MS)
+  useAutoSave(parsed, async (v) => save(v), 5000)
 
   const onDelete = useCallback(async () => {
     if (dayLoading) return
@@ -63,22 +61,18 @@ function SetRow({ set }: { set: WorkoutSet }) {
     <Paper
       withBorder
       radius="md"
-      p={0}
+      p="md"
       style={{
-        background: set.dropSetGroupId
-          ? (theme.colorScheme === 'light' ? 'rgba(99,102,241,0.12)' : 'rgba(99,102,241,0.18)')
-          : undefined,
         borderColor: surfaces.border,
         backdropFilter: 'none',
       }}
     >
-      <Group justify="space-between" align="center" wrap="nowrap" gap="sm">
-        <Group
-          gap="sm"
-          wrap="nowrap"
-          style={{ flex: 1, minWidth: 0, padding: theme.spacing.xs }}
-        >
+      <Group justify="space-between" align="center" wrap="wrap" gap="md">
+        <Group gap="md" wrap="wrap">
           <Stack gap={4} w={110}>
+            <Text size="xs" c="dimmed">
+              Reps
+            </Text>
             <TextInput
           type="number"
           value={repsInput}
@@ -89,15 +83,12 @@ function SetRow({ set }: { set: WorkoutSet }) {
               size="sm"
               radius="md"
               variant="filled"
-              placeholder="Reps"
         />
           </Stack>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 2px' }}>
-            <Text fw={700} size="sm">
-              ×
-            </Text>
-          </div>
           <Stack gap={4} w={140}>
+            <Text size="xs" c="dimmed">
+              Weight (kg)
+            </Text>
             <TextInput
           type="number"
           value={weightInput}
@@ -108,25 +99,30 @@ function SetRow({ set }: { set: WorkoutSet }) {
               size="sm"
               radius="md"
               variant="filled"
-              placeholder="Weight (kg)"
             />
           </Stack>
+          <Stack gap={4}>
+            <Text size="xs" c="dimmed">
+              Type
+            </Text>
+            <Badge color={set.dropSetGroupId ? theme.primaryColor : 'gray'} variant="light">
+              {set.dropSetGroupId ? 'Drop set' : 'Straight set'}
+            </Badge>
+          </Stack>
         </Group>
-        <div style={{ paddingRight: theme.spacing.xs }}>
-          <Tooltip label="Remove set" position="top" withArrow>
-            <ActionIcon
-              variant="light"
-              color="red"
-              radius="md"
-              size="lg"
-              onClick={onDelete}
-              aria-label="Delete set"
-              disabled={dayLoading}
-            >
-              <IconTrash size={18} />
-            </ActionIcon>
-          </Tooltip>
-        </div>
+        <Tooltip label="Remove set" position="top" withArrow>
+          <ActionIcon
+            variant="light"
+            color="red"
+            radius="md"
+            size="lg"
+            onClick={onDelete}
+            aria-label="Delete set"
+            disabled={dayLoading}
+          >
+            <IconTrash size={18} />
+          </ActionIcon>
+        </Tooltip>
       </Group>
     </Paper>
   )
@@ -135,7 +131,7 @@ function SetRow({ set }: { set: WorkoutSet }) {
 export default function SetList({ exercise }: { exercise: Exercise }) {
   const sets = Array.isArray(exercise.sets) ? exercise.sets : []
   return (
-    <Stack gap="xs" mt="xs">
+    <Stack gap="sm" mt="xs">
       {sets.map((s) => (
         <SetRow key={s.id} set={s} />
       ))}

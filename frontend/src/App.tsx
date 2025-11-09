@@ -204,7 +204,13 @@ function Home() {
           color: baseTextColor
         }}
       >
-        <AppShell.Header>
+        <AppShell.Header
+          style={{
+            background: 'transparent',
+            borderBottom: 'none',
+            padding: 0
+          }}
+        >
           <HeaderBar
             onBrowseCatalog={() => nav('/catalog')}
             onSave={() => flushAutoSaves('manual')}

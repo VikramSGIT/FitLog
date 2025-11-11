@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { api } from '@/api/client'
 import type { DayWithDetails, Exercise, ExerciseEntry, RestPeriod, WorkoutSet } from '@/api/client'
 
 export type SaveMode = 'auto' | 'manual'
@@ -85,11 +86,43 @@ export type WorkoutState = {
   lastSaveMode: SaveMode | null
   lastSavedAt: number | null
   autoSaveHandlers: Set<() => Promise<boolean>>
+  // Batched op-log
+  opLog: Array<
+    | { type: 'createExercise'; tempId: string; dayId: string; catalogId: string; position: number; comment?: string }
+    | { type: 'createSet'; tempId: string; exerciseId: string; position: number; reps: number; weightKg: number; isWarmup?: boolean }
+    | { type: 'updateExercise'; id: string; patch: Partial<{ position: number; comment: string }> }
+    | { type: 'updateSet'; id: string; patch: Partial<{ position: number; reps: number; weightKg: number; isWarmup: boolean }> }
+    | { type: 'reorderExercises'; dayId: string; orderedIds: string[] }
+    | { type: 'reorderSets'; exerciseId: string; orderedIds: string[] }
+    | { type: 'deleteExercise'; id: string }
+    | { type: 'deleteSet'; id: string }
+    | { type: 'createRest'; tempId: string; exerciseId: string; position: number; durationSeconds: number }
+    | { type: 'updateRest'; id: string; patch: Partial<{ position: number; durationSeconds: number }> }
+    | { type: 'deleteRest'; id: string }
+    | { type: 'updateDay'; dayId: string; isRestDay: boolean }
+  >
+  hiddenIds: Set<string>
+  flushInFlight: boolean
+  tempIdCounter: number
   setDay: (day: DayWithDetails | null) => void
   setDayLoading: (loading: boolean) => void
   setSaving: (state: WorkoutState['saving'], mode?: SaveMode) => void
   registerAutoSave: (handler: () => Promise<boolean>) => () => void
   flushAutoSaves: (mode?: SaveMode) => Promise<void>
+  // Batch queue helpers
+  queueCreateExercise: (params: { dayId: string; catalogId: string; nameDisplay: string; position?: number; comment?: string }) => string
+  queueCreateSet: (exerciseId: string, params: { position: number; reps: number; weightKg: number; isWarmup?: boolean }) => string
+  queueUpdateExercise: (id: string, patch: Partial<{ position: number; comment: string }>) => void
+  queueUpdateSet: (id: string, patch: Partial<{ position: number; reps: number; weightKg: number; isWarmup: boolean }>) => void
+  queueReorderExercises: (dayId: string, orderedIds: string[]) => void
+  queueReorderSets: (exerciseId: string, orderedIds: string[]) => void
+  queueDeleteExercise: (id: string) => void
+  queueDeleteSet: (id: string) => void
+  queueCreateRest: (exerciseId: string, params: { position: number; durationSeconds: number }) => string
+  queueUpdateRest: (id: string, patch: Partial<{ position: number; durationSeconds: number }>) => void
+  queueDeleteRest: (id: string) => void
+  queueUpdateDay: (dayId: string, isRestDay: boolean) => void
+  flushOpLog: () => Promise<boolean>
   // Local state update helpers
   addExerciseLocal: (ex: Exercise) => void
   updateExerciseLocal: (id: string, patch: Partial<Exercise>) => void
@@ -109,6 +142,10 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
   lastSaveMode: null,
   lastSavedAt: null,
   autoSaveHandlers: new Set(),
+  opLog: [],
+  hiddenIds: new Set(),
+  flushInFlight: false,
+  tempIdCounter: 1,
   setDay: (day) => {
     if (!day) {
       set({ day: null, dayLoading: false })
@@ -142,13 +179,19 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
   flushAutoSaves: async (mode: SaveMode = 'manual') => {
     const handlers = Array.from(get().autoSaveHandlers)
     const setSaving = get().setSaving
+    // Always attempt to flush operation log first
+    const flushedOps = await get().flushOpLog()
     if (handlers.length === 0) {
-      setSaving('idle', mode)
+      if (flushedOps) {
+      setSaving('saved', mode)
+      } else {
+        setSaving('idle', mode)
+      }
       return
     }
     setSaving('saving', mode)
     try {
-      let didSaveAny = false
+      let didSaveAny = flushedOps
       for (const fn of handlers) {
         const did = await fn()
         if (did) didSaveAny = true
@@ -161,6 +204,247 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
     } catch (err) {
       console.error(err)
       setSaving('error', mode)
+    }
+  },
+  // Queue helpers
+  queueCreateExercise: ({ dayId, catalogId, nameDisplay, position, comment }) => {
+    const d = get().day
+    if (!d || d.id !== dayId) return ''
+    const tempId = `temp-ex-${get().tempIdCounter}`
+    set((current) => ({ tempIdCounter: current.tempIdCounter + 1 }))
+    const pos = typeof position === 'number' ? position : d.exercises.length
+    // Local UI insert
+    const ex: Exercise = {
+      id: tempId,
+      dayId,
+      catalogId,
+      name: nameDisplay,
+      position: pos,
+      comment: comment ?? undefined,
+      sets: []
+    }
+    get().addExerciseLocal(ex)
+    // Log op
+    set((state) => ({
+      opLog: [
+        ...state.opLog,
+        { type: 'createExercise', tempId, dayId, catalogId, position: pos, comment }
+      ]
+    }))
+    return tempId
+  },
+  queueCreateSet: (exerciseId, { position, reps, weightKg, isWarmup }) => {
+    const tempId = `temp-set-${get().tempIdCounter}`
+    set((current) => ({ tempIdCounter: current.tempIdCounter + 1 }))
+    const d = get().day
+    if (d) {
+      const setObj: WorkoutSet = {
+        id: tempId,
+        exerciseId,
+        userId: '', // unknown locally
+        workoutDate: d.workoutDate,
+        position,
+        reps,
+        weightKg,
+        isWarmup: Boolean(isWarmup),
+        volumeKg: reps * weightKg
+      }
+      get().addSetLocal(exerciseId, setObj)
+    }
+    set((state) => ({
+      opLog: [
+        ...state.opLog,
+        { type: 'createSet', tempId, exerciseId, position, reps, weightKg, isWarmup: Boolean(isWarmup) }
+      ]
+    }))
+    return tempId
+  },
+  queueUpdateExercise: (id, patch) => {
+    // UI reflect change immediately
+    get().updateExerciseLocal(id, patch as any)
+    set((state) => ({ opLog: [...state.opLog, { type: 'updateExercise', id, patch }] }))
+  },
+  queueUpdateSet: (id, patch) => {
+    get().updateSetLocal(id, patch as any)
+    set((state) => ({ opLog: [...state.opLog, { type: 'updateSet', id, patch }] }))
+  },
+  queueReorderExercises: (dayId, orderedIds) => {
+    // Update local positions
+    const d = get().day
+    if (d && d.id === dayId) {
+      const idToPos = new Map<string, number>()
+      orderedIds.forEach((id, idx) => idToPos.set(id, idx))
+      d.exercises.forEach((e) => {
+        const next = idToPos.get(e.id)
+        if (typeof next === 'number') {
+          e.position = next
+        }
+      })
+      set({ day: { ...d, exercises: [...d.exercises].sort((a, b) => a.position - b.position) } })
+    }
+    set((state) => ({ opLog: [...state.opLog, { type: 'reorderExercises', dayId, orderedIds }] }))
+  },
+  queueReorderSets: (exerciseId, orderedIds) => {
+    const d = get().day
+    if (d) {
+      const ex = d.exercises.find((e) => e.id === exerciseId)
+      if (ex) {
+        const idToPos = new Map<string, number>()
+        orderedIds.forEach((id, idx) => idToPos.set(id, idx))
+        ex.sets.forEach((s) => {
+          const next = idToPos.get(s.id)
+          if (typeof next === 'number') s.position = next
+        })
+        get().updateExerciseLocal(exerciseId, { sets: [...ex.sets].sort((a, b) => a.position - b.position) } as any)
+      }
+    }
+    set((state) => ({ opLog: [...state.opLog, { type: 'reorderSets', exerciseId, orderedIds }] }))
+  },
+  queueDeleteExercise: (id) => {
+    // Remove from UI immediately but always push delete op (temp or persisted)
+    get().removeExerciseLocal(id)
+    set((state) => ({
+      hiddenIds: new Set<string>([...state.hiddenIds, id]),
+      opLog: [...state.opLog, { type: 'deleteExercise', id }]
+    }))
+  },
+  queueDeleteSet: (id) => {
+    // Remove from UI immediately but always push delete op (temp or persisted)
+    get().removeSetLocal(id)
+    set((state) => ({
+      hiddenIds: new Set<string>([...state.hiddenIds, id]),
+      opLog: [...state.opLog, { type: 'deleteSet', id }]
+    }))
+  },
+  queueCreateRest: (exerciseId, { position, durationSeconds }) => {
+    const tempId = `temp-rest-${get().tempIdCounter}`
+    set((current) => ({ tempIdCounter: current.tempIdCounter + 1 }))
+    const d = get().day
+    if (d) {
+      const restObj: RestPeriod = {
+        id: tempId,
+        exerciseId,
+        position,
+        durationSeconds,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      } as any
+      get().addRestLocal(exerciseId, restObj)
+    }
+    set((state) => ({
+      opLog: [...state.opLog, { type: 'createRest', tempId, exerciseId, position, durationSeconds }]
+    }))
+    return tempId
+  },
+  queueUpdateRest: (id, patch) => {
+    get().updateRestLocal(id, patch as any)
+    set((state) => ({ opLog: [...state.opLog, { type: 'updateRest', id, patch }] }))
+  },
+  queueDeleteRest: (id) => {
+    // Remove from UI immediately but always push delete op (temp or persisted)
+    get().removeRestLocal(id)
+    set((state) => ({
+      hiddenIds: new Set<string>([...state.hiddenIds, id]),
+      opLog: [...state.opLog, { type: 'deleteRest', id }]
+    }))
+  },
+  queueUpdateDay: (dayId, isRestDay) => {
+    const d = get().day
+    if (d && d.id === dayId) {
+      set({ day: { ...d, isRestDay } })
+    }
+    set((state) => ({ opLog: [...state.opLog, { type: 'updateDay', dayId, isRestDay }] }))
+  },
+  flushOpLog: async () => {
+    const state = get()
+    if (state.flushInFlight) return false
+    const ops = state.opLog
+    if (!ops || ops.length === 0) {
+      return false
+    }
+    set({ flushInFlight: true })
+    try {
+      const withTempRefs = ops.map((op) => {
+        const addPrefix = (id: string) => (id && id.startsWith('temp-') ? `temp:${id}` : id)
+        if (op.type === 'createExercise') return op
+        if (op.type === 'createSet') {
+          return { ...op, exerciseId: addPrefix(op.exerciseId) }
+        }
+        if (op.type === 'createRest') {
+          return { ...op, exerciseId: addPrefix(op.exerciseId) }
+        }
+        if (op.type === 'updateExercise') {
+          return { ...op, id: addPrefix(op.id) }
+        }
+        if (op.type === 'updateSet') {
+          return { ...op, id: addPrefix(op.id) }
+        }
+        if (op.type === 'updateRest') {
+          return { ...op, id: addPrefix(op.id) }
+        }
+        if (op.type === 'reorderExercises') {
+          return { ...op, orderedIds: op.orderedIds.map(addPrefix) }
+        }
+        if (op.type === 'reorderSets') {
+          return { ...op, exerciseId: addPrefix(op.exerciseId), orderedIds: op.orderedIds.map(addPrefix) }
+        }
+        if (op.type === 'deleteExercise') {
+          return { ...op, id: addPrefix(op.id) }
+        }
+        if (op.type === 'deleteSet') {
+          return { ...op, id: addPrefix(op.id) }
+        }
+        if (op.type === 'deleteRest') {
+          return { ...op, id: addPrefix(op.id) }
+        }
+        if (op.type === 'updateDay') {
+          return op
+        }
+        return op
+      })
+      const res = await api.saveBatch(withTempRefs as any, crypto.randomUUID?.() || `${Date.now()}`)
+      // Apply mapping for temp IDs
+      const exerciseMap = new Map<string, string>()
+      const setMap = new Map<string, string>()
+      const restMap = new Map<string, string>()
+      res.mapping?.exercises?.forEach((m) => exerciseMap.set(m.tempId, m.id))
+      res.mapping?.sets?.forEach((m) => setMap.set(m.tempId, m.id))
+      res.mapping?.rests?.forEach((m) => restMap.set(m.tempId, m.id))
+      // Replace temp ids in local state
+      const d = get().day
+      if (d) {
+        const nextExercises = d.exercises.map((ex) => {
+          const mappedId = exerciseMap.get(ex.id)
+          if (mappedId) {
+            return normalizeExercise({ ...ex, id: mappedId, sets: ex.sets.map((s) => ({ ...s, exerciseId: mappedId })) })
+          }
+          return ex
+        })
+        // Update sets
+        nextExercises.forEach((ex, idx) => {
+          const updatedSets = ex.sets.map((s) => {
+            const mappedSetId = setMap.get(s.id)
+            if (mappedSetId) {
+              return { ...s, id: mappedSetId, exerciseId: ex.id }
+            }
+            return s
+          })
+          const updatedRests = ensureArray(ex.restPeriods).map((rp) => {
+            const mappedId = restMap.get(rp.id)
+            return mappedId ? { ...rp, id: mappedId } : rp
+          })
+          nextExercises[idx] = normalizeExercise({ ...ex, sets: updatedSets, restPeriods: updatedRests })
+        })
+        set({ day: { ...d, exercises: nextExercises } })
+      }
+      // Clear op log on success
+      set({ opLog: [] })
+      return true
+    } catch (e) {
+      console.error('flushOpLog failed', e)
+      return false
+    } finally {
+      set({ flushInFlight: false })
     }
   },
   addExerciseLocal: (ex) => {

@@ -13,7 +13,7 @@ import { useMediaQuery } from '@mantine/hooks'
 const DEFAULT_REST_DURATION_SECONDS = 90
 
 export default function ExerciseItem({ exercise }: { exercise: Exercise }) {
-  const { updateExerciseLocal, removeExerciseLocal } = useWorkoutStore()
+  const { queueUpdateExercise, queueDeleteExercise, queueCreateSet } = useWorkoutStore()
   const isRestDay = useWorkoutStore((s) => s.day?.isRestDay ?? false)
   const dayLoading = useWorkoutStore((s) => s.dayLoading)
   const [comment, setComment] = useState(exercise.comment || '')
@@ -26,18 +26,16 @@ export default function ExerciseItem({ exercise }: { exercise: Exercise }) {
 
   const saveComment = useCallback(async (value: string) => {
     if ((exercise.comment || '') !== value) {
-      const updated = await api.updateExercise(exercise.id, { comment: value })
-      updateExerciseLocal(exercise.id, { comment: updated.comment })
+      queueUpdateExercise(exercise.id, { comment: value })
       return true
     }
     return false
-  }, [exercise.id, exercise.comment, updateExerciseLocal])
+  }, [exercise.id, exercise.comment, queueUpdateExercise])
   useAutoSave(comment, saveComment, AUTO_SAVE_DELAY_MS)
 
   async function onDelete() {
     if (dayLoading) return
-    await api.deleteExercise(exercise.id)
-    removeExerciseLocal(exercise.id)
+    queueDeleteExercise(exercise.id)
   }
 
   const nextSetPosition = useMemo(() => {
@@ -52,22 +50,15 @@ export default function ExerciseItem({ exercise }: { exercise: Exercise }) {
 
   async function addSet() {
     if (dayLoading) return
-    const created = await api.createSet(exercise.id, {
-      position: nextSetPosition,
-      reps: 10,
-      weightKg: 20,
-      isWarmup: false
-    })
-    useWorkoutStore.getState().addSetLocal(exercise.id, created)
+    queueCreateSet(exercise.id, { position: nextSetPosition, reps: 10, weightKg: 20, isWarmup: false })
   }
 
   async function addRest() {
     if (dayLoading) return
-    const created = await api.createRest(exercise.id, {
+    useWorkoutStore.getState().queueCreateRest(exercise.id, {
       position: nextRestPosition,
       durationSeconds: DEFAULT_REST_DURATION_SECONDS
     })
-    useWorkoutStore.getState().addRestLocal(exercise.id, created)
   }
 
   return (
@@ -125,7 +116,7 @@ export default function ExerciseItem({ exercise }: { exercise: Exercise }) {
                   size="lg"
                   onClick={onDelete}
                   aria-label="Delete exercise"
-                  disabled={dayLoading}
+          disabled={dayLoading}
                 >
                   <IconTrash size={18} />
                 </ActionIcon>

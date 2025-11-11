@@ -8,7 +8,7 @@ import { DEFAULT_SURFACES, ThemeSurfaces } from '@/theme'
 import { AUTO_SAVE_DELAY_MS } from '@/config'
 
 function SetRow({ set, multiplier, baseWeightKg }: { set: WorkoutSet; multiplier?: number | null; baseWeightKg?: number | null }) {
-  const { updateSetLocal, removeSetLocal } = useWorkoutStore()
+  const { queueUpdateSet, queueDeleteSet, updateSetLocal } = useWorkoutStore()
   const dayLoading = useWorkoutStore((s) => s.dayLoading)
   const [repsInput, setRepsInput] = useState<string>(() => String(set.reps))
   const [weightInput, setWeightInput] = useState<string>(() => String(set.weightKg))
@@ -58,18 +58,17 @@ function SetRow({ set, multiplier, baseWeightKg }: { set: WorkoutSet; multiplier
     if (!('reps' in updates) && !('weightKg' in updates)) {
       return false
     }
-    const updated = await api.updateSet(set.id, updates)
-    updateSetLocal(set.id, { reps: updated.reps, weightKg: updated.weightKg })
+    // Queue update (local UI already reflects changes via updateSetLocal in queue helper)
+    queueUpdateSet(set.id, updates)
     return true
-  }, [set.id, set.reps, set.weightKg, updateSetLocal])
+  }, [queueUpdateSet, set.id, set.reps, set.weightKg, updateSetLocal])
 
   useAutoSave(parsed, async (v) => save(v), AUTO_SAVE_DELAY_MS)
 
   const onDelete = useCallback(async () => {
     if (dayLoading) return
-    await api.deleteSet(set.id)
-    removeSetLocal(set.id)
-  }, [dayLoading, removeSetLocal, set.id])
+    queueDeleteSet(set.id)
+  }, [dayLoading, queueDeleteSet, set.id])
 
   return (
     <Paper withBorder radius="md" p={0} style={{ borderColor: surfaces.border, backdropFilter: 'none' }}>
@@ -100,11 +99,11 @@ function SetRow({ set, multiplier, baseWeightKg }: { set: WorkoutSet; multiplier
       </div>
           <Group gap="xs" align="center" wrap="nowrap" w={180}>
             <TextInput
-              type="number"
-              value={weightInput}
-              min={0}
-              step="0.25"
-              disabled={dayLoading}
+          type="number"
+          value={weightInput}
+          min={0}
+          step="0.25"
+          disabled={dayLoading}
               onChange={(e) => setWeightInput(e.currentTarget.value)}
               size="sm"
               radius="md"
@@ -140,7 +139,7 @@ function SetRow({ set, multiplier, baseWeightKg }: { set: WorkoutSet; multiplier
 }
 
 function RestRow({ rest }: { rest: RestPeriod }) {
-  const { updateRestLocal, removeRestLocal } = useWorkoutStore()
+  const { queueUpdateRest, queueDeleteRest } = useWorkoutStore()
   const dayLoading = useWorkoutStore((s) => s.dayLoading)
   const [durationInput, setDurationInput] = useState<string>(() => String(rest.durationSeconds))
   const theme = useMantineTheme()
@@ -162,28 +161,19 @@ function RestRow({ rest }: { rest: RestPeriod }) {
     return { duration: Math.max(0, Math.round(value)) }
   }, [durationInput])
 
-  const save = useCallback(
-    async ({ duration }: { duration: number | null }) => {
-      if (duration === null) return false
-      if (duration === rest.durationSeconds) return false
-      const updated = await api.updateRest(rest.id, { durationSeconds: duration })
-      updateRestLocal(rest.id, {
-        durationSeconds: updated.durationSeconds,
-        position: updated.position,
-        updatedAt: updated.updatedAt
-      })
-      return true
-    },
-    [rest.durationSeconds, rest.id, updateRestLocal]
-  )
+  const save = useCallback(({ duration }: { duration: number | null }) => {
+    if (duration === null) return false
+    if (duration === rest.durationSeconds) return false
+    queueUpdateRest(rest.id, { durationSeconds: duration })
+    return true
+  }, [queueUpdateRest, rest.durationSeconds, rest.id])
 
   useAutoSave(parsed, async (v) => save(v), AUTO_SAVE_DELAY_MS)
 
   const onDelete = useCallback(async () => {
     if (dayLoading) return
-    await api.deleteRest(rest.id)
-    removeRestLocal(rest.id)
-  }, [dayLoading, removeRestLocal, rest.id])
+    queueDeleteRest(rest.id)
+  }, [dayLoading, queueDeleteRest, rest.id])
 
   const restBackground = theme.colorScheme === 'light' ? 'rgba(56, 189, 248, 0.1)' : 'rgba(56, 189, 248, 0.18)'
 

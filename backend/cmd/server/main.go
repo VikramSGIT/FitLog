@@ -40,6 +40,7 @@ func main() {
 	exercisesStore := store.NewExercises(database.DB)
 	setsStore := store.NewSets(database.DB)
 	catalogStore := store.NewCatalog(database.DB)
+	saveStore := store.NewSave(database.DB)
 
 	authCfg := middleware.AuthConfig{
 		JWTSecret:    cfg.JWTSecret,
@@ -55,6 +56,7 @@ func main() {
 	exercisesHandler := &handlers.ExercisesHandler{Exercises: exercisesStore}
 	setsHandler := &handlers.SetsHandler{Sets: setsStore}
 	catalogHandler := &handlers.CatalogHandler{Catalog: catalogStore}
+	saveHandler := &handlers.SaveHandler{Service: saveStore}
 	// Admin emails set
 	adminSet := map[string]struct{}{}
 	if cfg.AdminEmails != "" {
@@ -82,8 +84,8 @@ func main() {
 			})
 
 			// Authenticated routes
-			r.Group(func(r chi.Router) {
-				r.Use(authCfg.Middleware)
+				r.Group(func(r chi.Router) {
+					r.Use(authCfg.Middleware)
 				r.Get("/days", daysHandler.GetByDate)        // /api/days?date=YYYY-MM-DD&ensure=true
 				r.Post("/days", daysHandler.Create)          // body {date}
 				r.Patch("/days/{dayId}", daysHandler.Update) // body {isRestDay}
@@ -106,6 +108,9 @@ func main() {
 				// Admin-only routes
 				r.Post("/catalog/admin/import", adminHandler.UpsertCatalogJSON)
 				r.Post("/catalog/admin/import/csv", adminHandler.UpsertCatalogCSV)
+
+				// Batch save
+				r.Post("/save", saveHandler.Handle)
 			})
 		})
 	})

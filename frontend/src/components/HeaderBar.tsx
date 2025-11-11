@@ -72,6 +72,7 @@ export default function HeaderBar({
   const [drawerOpened, setDrawerOpened] = useState(false)
   const day = useWorkoutStore((s) => s.day)
   const dayLoading = useWorkoutStore((s) => s.dayLoading)
+  const hasPendingChanges = useWorkoutStore((s) => s.opLog.length > 0)
   const setDay = useWorkoutStore((s) => s.setDay)
   const setDayLoading = useWorkoutStore((s) => s.setDayLoading)
   const [restUpdating, setRestUpdating] = useState(false)
@@ -175,6 +176,14 @@ export default function HeaderBar({
 
   // Show notifications on save result transitions (supports stores that go saving -> saved or saving -> idle with lastSavedAt update)
   useEffect(() => {
+    const isMobile = window.matchMedia('(max-width: 640px)').matches
+    const baseNotificationProps = isMobile
+      ? {
+          withCloseButton: true,
+          className: 'slide-dismiss'
+        }
+      : {}
+
     // When save starts
     if (saving === 'saving') {
       if (!saveNotifIdRef.current) {
@@ -183,7 +192,8 @@ export default function HeaderBar({
           message: 'Saving your changes.',
           loading: true,
           autoClose: false,
-          withCloseButton: false
+          withCloseButton: !isMobile,
+          ...baseNotificationProps
         })
         saveNotifIdRef.current = String(id)
       } else {
@@ -193,7 +203,8 @@ export default function HeaderBar({
           message: 'Saving your changes.',
           loading: true,
           autoClose: false,
-          withCloseButton: false
+          withCloseButton: !isMobile,
+          ...baseNotificationProps
         })
       }
       prevSavingRef.current = saving
@@ -240,7 +251,8 @@ export default function HeaderBar({
           icon: <IconDeviceFloppy size={16} />,
           loading: false,
           autoClose: 2000,
-          withCloseButton: true
+          withCloseButton: !isMobile,
+          ...baseNotificationProps
         })
         saveNotifIdRef.current = null
       } else {
@@ -248,7 +260,9 @@ export default function HeaderBar({
           title,
           message,
           color: 'teal',
-          icon: <IconDeviceFloppy size={16} />
+          icon: <IconDeviceFloppy size={16} />,
+          withCloseButton: !isMobile,
+          ...baseNotificationProps
         })
       }
       prevLastSavedAtRef.current = lastSavedAt ?? prevLastSavedAtRef.current
@@ -286,21 +300,14 @@ export default function HeaderBar({
       }
     }
     setRestUpdating(true)
-    setDayLoading(true)
-    try {
-      const updated = await api.updateDay(currentDay.id, { isRestDay: !currentDay.isRestDay })
-      setDay(updated)
-      notifications.show({
-        title: updated.isRestDay ? 'Marked rest day' : 'Switched to training day',
-        message: updated.isRestDay
-          ? 'This day is now a rest day.'
-          : 'This day is now a training day.',
-        color: updated.isRestDay ? 'yellow' : 'teal'
-      })
-    } finally {
-      setDayLoading(false)
-      setRestUpdating(false)
-    }
+    const next = !currentDay.isRestDay
+    useWorkoutStore.getState().queueUpdateDay(currentDay.id, next)
+    notifications.show({
+      title: next ? 'Marked rest day' : 'Switched to training day',
+      message: next ? 'This day is now a rest day.' : 'This day is now a training day.',
+      color: next ? 'yellow' : 'teal'
+    })
+    setRestUpdating(false)
   }
   return (
     <>
@@ -403,13 +410,34 @@ export default function HeaderBar({
                   loading={saving === 'saving'}
                   disabled={saving === 'saving'}
                   disableReveal={isMobile}
-                  textColor={saving === 'error' ? errorTextColor : baseTextColor}
+                  textColor={
+                    saving === 'error'
+                      ? errorTextColor
+                      : hasPendingChanges && saving !== 'saving'
+                      ? errorTextColor
+                      : baseTextColor
+                  }
                   style={{
                     background: neutralButtonBackground,
                     border: `1px solid ${
-                      saving === 'error' ? errorBorderColor : persistVariant ? neutralBorderColor : accentBorderColor
+                      saving === 'error'
+                        ? errorBorderColor
+                        : hasPendingChanges && saving !== 'saving'
+                        ? errorBorderColor
+                        : persistVariant
+                        ? neutralBorderColor
+                        : accentBorderColor
                     }`,
-                    color: saving === 'error' ? errorTextColor : baseTextColor
+                    color:
+                      saving === 'error'
+                        ? errorTextColor
+                        : hasPendingChanges && saving !== 'saving'
+                        ? errorTextColor
+                        : baseTextColor,
+                    boxShadow:
+                      hasPendingChanges && saving !== 'saving'
+                        ? '0 0 0 3px rgba(248,113,113,0.18), 0 0 12px rgba(248,113,113,0.35)'
+                        : 'none'
                   }}
                 />
 

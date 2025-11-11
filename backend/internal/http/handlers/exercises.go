@@ -16,7 +16,6 @@ type ExercisesHandler struct {
 }
 
 type createExerciseRequest struct {
-	Name      string  `json:"name"`
 	Position  int     `json:"position"`
 	CatalogID *string `json:"catalogId"`
 	Comment   *string `json:"comment"`
@@ -34,7 +33,11 @@ func (h *ExercisesHandler) Create(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid json", http.StatusBadRequest)
 		return
 	}
-	ex, err := h.Exercises.Create(r.Context(), uid, dayID, req.Name, req.Position, req.CatalogID, req.Comment)
+	if req.CatalogID == nil || *req.CatalogID == "" {
+		http.Error(w, "catalogId is required", http.StatusBadRequest)
+		return
+	}
+	ex, err := h.Exercises.Create(r.Context(), uid, dayID, *req.CatalogID, req.Position, req.Comment)
 	if err != nil {
 		if errors.Is(err, store.ErrExerciseOnRestDay) {
 			http.Error(w, "cannot add exercises to a rest day", http.StatusConflict)
@@ -47,10 +50,8 @@ func (h *ExercisesHandler) Create(w http.ResponseWriter, r *http.Request) {
 }
 
 type updateExerciseRequest struct {
-	Name      *string `json:"name"`
-	Position  *int    `json:"position"`
-	CatalogID *string `json:"catalogId"`
-	Comment   *string `json:"comment"`
+	Position *int    `json:"position"`
+	Comment  *string `json:"comment"`
 }
 
 func (h *ExercisesHandler) Update(w http.ResponseWriter, r *http.Request) {
@@ -65,7 +66,7 @@ func (h *ExercisesHandler) Update(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid json", http.StatusBadRequest)
 		return
 	}
-	ex, err := h.Exercises.Update(r.Context(), uid, id, req.Name, req.Position, req.CatalogID, req.Comment)
+	ex, err := h.Exercises.Update(r.Context(), uid, id, req.Position, req.Comment)
 	if err != nil {
 		http.Error(w, "server error", http.StatusInternalServerError)
 		return

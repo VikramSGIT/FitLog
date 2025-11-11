@@ -8,23 +8,23 @@ import (
 )
 
 type CatalogSearchParams struct {
-	Q          string
-	Type       string
-	BodyPart   string
-	Equipment  string
-	Level      string
-	Muscle     string
-	Page       int
-	PageSize   int
-	Sort       string
+	Q         string
+	Type      string
+	BodyPart  string
+	Equipment string
+	Level     string
+	Muscle    string
+	Page      int
+	PageSize  int
+	Sort      string
 }
 
 type CatalogFacets struct {
-	Types      []string `json:"types"`
-	BodyParts  []string `json:"bodyParts"`
-	Equipment  []string `json:"equipment"`
-	Levels     []string `json:"levels"`
-	Muscles    []string `json:"muscles"`
+	Types     []string `json:"types"`
+	BodyParts []string `json:"bodyParts"`
+	Equipment []string `json:"equipment"`
+	Levels    []string `json:"levels"`
+	Muscles   []string `json:"muscles"`
 }
 
 func (c *Catalog) Facets(ctx context.Context) (CatalogFacets, error) {
@@ -41,36 +41,31 @@ func (c *Catalog) Facets(ctx context.Context) (CatalogFacets, error) {
 	if err := c.db.SelectContext(ctx, &f.Levels, `select name from levels order by name`); err != nil {
 		return f, err
 	}
-	if err := c.db.SelectContext(ctx, &f.Muscles, `
-with m as (
-  select primary_muscle as m from exercise_catalog where primary_muscle is not null
-  union
-  select unnest(secondary_muscles) as m from exercise_catalog where secondary_muscles is not null
-)
-select distinct m from m where m is not null order by 1
-`); err != nil {
+	if err := c.db.SelectContext(ctx, &f.Muscles, `select name from muscle_types order by name`); err != nil {
 		return f, err
 	}
 	return f, nil
 }
 
 type CatalogItem struct {
-	ID                string   `db:"id" json:"id"`
-	Name              string   `db:"name" json:"name"`
-	Type              *string  `db:"type" json:"type,omitempty"`
-	BodyPart          *string  `db:"body_part" json:"bodyPart,omitempty"`
-	Equipment         *string  `db:"equipment" json:"equipment,omitempty"`
-	Level             *string  `db:"level" json:"level,omitempty"`
-	PrimaryMuscle     *string  `db:"primary_muscle" json:"primaryMuscle,omitempty"`
-	SecondaryMuscles  []string `db:"secondary_muscles" json:"secondaryMuscles,omitempty"`
+	ID               string   `db:"id" json:"id"`
+	Name             string   `db:"name" json:"name"`
+	Type             *string  `db:"type" json:"type,omitempty"`
+	BodyPart         *string  `db:"body_part" json:"bodyPart,omitempty"`
+	Equipment        *string  `db:"equipment" json:"equipment,omitempty"`
+	Level            *string  `db:"level" json:"level,omitempty"`
+	PrimaryMuscles   []string `json:"primaryMuscles"`
+	Multiplier       float64  `db:"multiplier" json:"multiplier"`
+	BaseWeightKg     float64  `db:"base_weight_kg" json:"baseWeightKg"`
+	SecondaryMuscles []string `json:"secondaryMuscles,omitempty"`
 }
 
 type CatalogSearchResult struct {
-	Items   []CatalogItem `json:"items"`
-	Page    int           `json:"page"`
-	PageSize int          `json:"pageSize"`
-	Total   int           `json:"total"`
-	HasMore bool          `json:"hasMore"`
+	Items    []CatalogItem `json:"items"`
+	Page     int           `json:"page"`
+	PageSize int           `json:"pageSize"`
+	Total    int           `json:"total"`
+	HasMore  bool          `json:"hasMore"`
 }
 
 func (c *Catalog) Search(ctx context.Context, p CatalogSearchParams) (CatalogSearchResult, error) {
@@ -107,7 +102,12 @@ func (c *Catalog) Search(ctx context.Context, p CatalogSearchParams) (CatalogSea
 		where = append(where, fmt.Sprintf("level = %s", arg(p.Level)))
 	}
 	if p.Muscle != "" {
-		where = append(where, fmt.Sprintf("(primary_muscle = %s OR %s = ANY(COALESCE(secondary_muscles,'{}'::text[])))", arg(p.Muscle), arg(p.Muscle)))
+		where = append(where, fmt.Sprintf(`(exists (
+  select 1 from exercise_catalog_primary_muscles pm
+  where pm.catalog_id = exercise_catalog.id and pm.muscle = %s
+) OR exists (
+  select 1 from exercise_catalog_secondary_muscles sm
+  where sm.catalog_id = exercise_catalog.id and sm.muscle = %s))`, arg(p.Muscle), arg(p.Muscle)))
 	}
 	cond := ""
 	if len(where) > 0 {
@@ -129,8 +129,18 @@ SELECT
   body_part,
   equipment,
   level,
-  primary_muscle,
-  COALESCE(array_to_json(secondary_muscles), '[]'::json) AS secondary_muscles
+  COALESCE((
+    SELECT array_to_json(array_agg(pm.muscle ORDER BY pm.muscle))
+    FROM exercise_catalog_primary_muscles pm
+    WHERE pm.catalog_id = exercise_catalog.id
+  ), '[]'::json) AS primary_muscles,
+  multiplier,
+  base_weight_kg,
+  COALESCE((
+    SELECT array_to_json(array_agg(sm.muscle ORDER BY sm.muscle))
+    FROM exercise_catalog_secondary_muscles sm
+    WHERE sm.catalog_id = exercise_catalog.id
+  ), '[]'::json) AS secondary_muscles
 FROM exercise_catalog
 ` + cond + `
 ORDER BY ` + sort + `
@@ -143,8 +153,9 @@ LIMIT $` + fmt.Sprint(len(args)+1) + ` OFFSET $` + fmt.Sprint(len(args)+2)
 	items := make([]CatalogItem, 0)
 	for rows.Next() {
 		var (
-			it   CatalogItem
-			jsonMuscles []byte
+			it            CatalogItem
+			primaryJSON   []byte
+			secondaryJSON []byte
 		)
 		if err := rows.Scan(
 			&it.ID,
@@ -153,16 +164,21 @@ LIMIT $` + fmt.Sprint(len(args)+1) + ` OFFSET $` + fmt.Sprint(len(args)+2)
 			&it.BodyPart,
 			&it.Equipment,
 			&it.Level,
-			&it.PrimaryMuscle,
-			&jsonMuscles,
+			&primaryJSON,
+			&it.Multiplier,
+			&it.BaseWeightKg,
+			&secondaryJSON,
 		); err != nil {
 			return CatalogSearchResult{}, err
 		}
-		if len(jsonMuscles) > 0 {
-			var sec []string
-			if err := json.Unmarshal(jsonMuscles, &sec); err == nil {
-				it.SecondaryMuscles = sec
-			}
+		if err := json.Unmarshal(primaryJSON, &it.PrimaryMuscles); err != nil {
+			return CatalogSearchResult{}, err
+		}
+		if err := json.Unmarshal(secondaryJSON, &it.SecondaryMuscles); err != nil {
+			return CatalogSearchResult{}, err
+		}
+		if it.PrimaryMuscles == nil {
+			it.PrimaryMuscles = []string{}
 		}
 		if it.SecondaryMuscles == nil {
 			it.SecondaryMuscles = []string{}
@@ -170,12 +186,10 @@ LIMIT $` + fmt.Sprint(len(args)+1) + ` OFFSET $` + fmt.Sprint(len(args)+2)
 		items = append(items, it)
 	}
 	return CatalogSearchResult{
-		Items: items,
-		Page: p.Page,
+		Items:    items,
+		Page:     p.Page,
 		PageSize: p.PageSize,
-		Total: total,
-		HasMore: p.Page * p.PageSize < total,
+		Total:    total,
+		HasMore:  p.Page*p.PageSize < total,
 	}, nil
 }
-
-

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { api, Exercise } from '@/api/client'
+import { Exercise } from '@/api/client'
 import { useWorkoutStore } from '@/store/useWorkoutStore'
 import ExerciseItem from './ExerciseItem'
 import { Alert, Button, Group, Loader, Paper, Stack, Text, Title, Tooltip, useMantineTheme, ActionIcon } from '@mantine/core'
@@ -17,7 +17,6 @@ type ExerciseListProps = {
 export default function ExerciseList({ onAddFromCatalog }: ExerciseListProps) {
   const day = useWorkoutStore((s) => s.day)
   const dayLoading = useWorkoutStore((s) => s.dayLoading)
-  const addExerciseLocal = useWorkoutStore((s) => s.addExerciseLocal)
   const theme = useMantineTheme()
   const surfaces = (theme.other?.surfaces as ThemeSurfaces) ?? DEFAULT_SURFACES
   const accentGradient = (theme.other?.accentGradient as string) ?? 'linear-gradient(135deg, #22d3ee 0%, #6366f1 100%)'
@@ -33,13 +32,6 @@ export default function ExerciseList({ onAddFromCatalog }: ExerciseListProps) {
   // rest toggle moved to HeaderBar
 
   // date ensure moved to HeaderBar
-
-  async function addCustomExercise() {
-    if (!day || day.isRestDay) return
-    const position = (exercises[exercises.length - 1]?.position ?? 0) + 1
-    const created = await api.createExercise(day.id, { name: 'New Exercise', position })
-    addExerciseLocal({ ...created, sets: [] })
-  }
 
   const handleAddFromCatalog = () => {
     if (!day || isRestDay || dayLoading) return
@@ -57,69 +49,35 @@ export default function ExerciseList({ onAddFromCatalog }: ExerciseListProps) {
         </Stack>
         <Group gap="sm" wrap="wrap">
           {isMobile ? (
-            <>
-              <Tooltip label="Add custom exercise">
-                <ActionIcon
-                  size="lg"
-                  radius="md"
-                  aria-label="Add custom exercise"
-                  onClick={addCustomExercise}
-                  disabled={!day || isRestDay || dayLoading}
-                  variant="outline"
-                  color={theme.primaryColor}
-                  style={{
-                    backgroundColor: 'transparent',
-                    borderColor: `var(--mantine-color-${theme.primaryColor}-5)`
-                  }}
-                >
-                  <IconPlus size={18} />
-                </ActionIcon>
-              </Tooltip>
-              <Tooltip label="Add from catalog">
-                <ActionIcon
-                  size="lg"
-                  radius="md"
-                  aria-label="Add from catalog"
-                  onClick={handleAddFromCatalog}
-                  disabled={!day || isRestDay || dayLoading}
-                  style={{
-                    backgroundImage: accentGradient,
-                    color: ctaTextColor,
-                    border: 'none'
-                  }}
-                >
-                  <IconPlus size={18} />
-                </ActionIcon>
-              </Tooltip>
-            </>
-          ) : (
-            <>
-              <Button
-                onClick={addCustomExercise}
-                disabled={!day || isRestDay || dayLoading}
-                variant="outline"
-                color={theme.primaryColor}
-                leftSection={<IconPlus size={18} />}
-                style={{
-                  backgroundColor: 'transparent',
-                  borderColor: `var(--mantine-color-${theme.primaryColor}-5)`
-                }}
-              >
-                Add custom exercise
-              </Button>
-              <Button
+            <Tooltip label="Add from catalog">
+              <ActionIcon
+                size="lg"
+                radius="md"
+                aria-label="Add from catalog"
                 onClick={handleAddFromCatalog}
                 disabled={!day || isRestDay || dayLoading}
-                leftSection={<IconPlus size={18} />}
                 style={{
                   backgroundImage: accentGradient,
                   color: ctaTextColor,
                   border: 'none'
                 }}
               >
-                Add from catalog
-              </Button>
-            </>
+                <IconPlus size={18} />
+              </ActionIcon>
+            </Tooltip>
+          ) : (
+            <Button
+              onClick={handleAddFromCatalog}
+              disabled={!day || isRestDay || dayLoading}
+              leftSection={<IconPlus size={18} />}
+              style={{
+                backgroundImage: accentGradient,
+                color: ctaTextColor,
+                border: 'none'
+              }}
+            >
+              Add from catalog
+            </Button>
           )}
         </Group>
       </Group>
@@ -184,7 +142,7 @@ export default function ExerciseList({ onAddFromCatalog }: ExerciseListProps) {
               <IconBarbell size={28} color="var(--mantine-color-primary-4)" />
               <Text fw={500}>No exercises yet</Text>
               <Text size="sm" c="dimmed" ta="center">
-                Use "Add from catalog" to pull templated movements or add a custom exercise to start from scratch.
+                Use "Add from catalog" to pull templated movements and start building your workout.
               </Text>
             </Stack>
           </Paper>

@@ -1,6 +1,6 @@
 # Exercise Tracker (React + Go + Postgres 17)
 
-Multi-user exercise logger with per-day workouts, exercises, sets (incl. drop sets), undo/redo on client, and auto-save for edits.
+Multi-user exercise logger with per-day workouts, exercises, sets, undo/redo on client, and auto-save for edits.
 
 ## Stack
 - Backend: Go 1.23, chi, sqlx, pgx, JWT cookie auth, Argon2id
@@ -49,7 +49,7 @@ Multi-user exercise logger with per-day workouts, exercises, sets (incl. drop se
 
 ## Database schema
 Key tables:
-- `users`, `workout_days`, `exercises` (with `comment`), `sets` (denormalized `user_id`/`workout_date`), `drop_set_groups`
+- `users`, `workout_days`, `exercises` (with `comment`), `sets` (denormalized `user_id`/`workout_date`)
 Extensions: `pgcrypto`, `citext`, `pg_trgm`. Includes materialized view `set_facts` for analytics.
 
 ## Notes

@@ -29,14 +29,15 @@ type Row struct {
 	BodyPart  string
 	Equipment string
 	Level     string
+	Primary   []string
 }
 
 func main() {
 	var (
-		dbURL string
+		dbURL   string
 		csvPath string
-		dryRun bool
-		batch int
+		dryRun  bool
+		batch   int
 	)
 	flag.StringVar(&dbURL, "db", os.Getenv("DATABASE_URL"), "Postgres connection URL (or env DATABASE_URL)")
 	flag.StringVar(&csvPath, "csv", "megaGymDataset.csv", "Path to megaGymDataset.csv")
@@ -70,6 +71,10 @@ func main() {
 	iBody := idx("BodyPart")
 	iEquip := idx("Equipment")
 	iLevel := idx("Level")
+	iPrimary := idx("PrimaryMuscle")
+	if iPrimary < 0 {
+		iPrimary = idx("Primary")
+	}
 	if iTitle < 0 {
 		log.Fatalf("Title column not found")
 	}
@@ -101,6 +106,7 @@ func main() {
 			BodyPart:  pick(rec, iBody),
 			Equipment: pick(rec, iEquip),
 			Level:     pick(rec, iLevel),
+			Primary:   splitList(pick(rec, iPrimary)),
 		}
 		rows = append(rows, row)
 	}
@@ -154,6 +160,50 @@ func pick(rec []string, i int) string {
 	return ""
 }
 
+func splitList(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	parts := strings.FieldsFunc(raw, func(r rune) bool { return r == '|' || r == ',' })
+	if len(parts) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func sanitizeList(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{})
+	out := make([]string, 0, len(values))
+	for _, v := range values {
+		trimmed := strings.TrimSpace(v)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		out = append(out, trimmed)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 func transact(ctx context.Context, db *sqlx.DB, fn func(*sqlx.Tx) error) error {
 	tx, err := db.BeginTxx(ctx, nil)
 	if err != nil {
@@ -175,29 +225,36 @@ func transact(ctx context.Context, db *sqlx.DB, fn func(*sqlx.Tx) error) error {
 func upsertCatalog(ctx context.Context, tx *sqlx.Tx, r Row) error {
 	slug := slugify(r.Title)
 	// Ensure reference values exist (FKs)
-	if strings.TrimSpace(r.Type) != "" {
-		if _, err := tx.ExecContext(ctx, `insert into exercise_types(name) values ($1) on conflict do nothing`, r.Type); err != nil {
+	const unspecified = "unspecified"
+	typeVal := defaultString(r.Type, unspecified)
+	bodyPart := defaultString(r.BodyPart, unspecified)
+	equipment := defaultString(r.Equipment, unspecified)
+	level := defaultString(r.Level, unspecified)
+	primaryList := sanitizeList(r.Primary)
+	if len(primaryList) == 0 {
+		primaryList = []string{unspecified}
+	}
+	for _, ref := range []struct {
+		value string
+		sql   string
+	}{
+		{typeVal, `insert into exercise_types(name) values ($1) on conflict do nothing`},
+		{bodyPart, `insert into body_parts(name) values ($1) on conflict do nothing`},
+		{equipment, `insert into equipment_types(name) values ($1) on conflict do nothing`},
+		{level, `insert into levels(name) values ($1) on conflict do nothing`},
+	} {
+		if _, err := tx.ExecContext(ctx, ref.sql, ref.value); err != nil {
 			return err
 		}
 	}
-	if strings.TrimSpace(r.BodyPart) != "" {
-		if _, err := tx.ExecContext(ctx, `insert into body_parts(name) values ($1) on conflict do nothing`, r.BodyPart); err != nil {
-			return err
-		}
-	}
-	if strings.TrimSpace(r.Equipment) != "" {
-		if _, err := tx.ExecContext(ctx, `insert into equipment_types(name) values ($1) on conflict do nothing`, r.Equipment); err != nil {
-			return err
-		}
-	}
-	if strings.TrimSpace(r.Level) != "" {
-		if _, err := tx.ExecContext(ctx, `insert into levels(name) values ($1) on conflict do nothing`, r.Level); err != nil {
+	for _, muscle := range primaryList {
+		if _, err := tx.ExecContext(ctx, `insert into muscle_types(name) values ($1) on conflict do nothing`, muscle); err != nil {
 			return err
 		}
 	}
 	const q = `
-insert into exercise_catalog (name, slug, description, type, body_part, equipment, level, links)
-values ($1, $2, $3, $4, $5, $6, $7, '{}'::text[])
+insert into exercise_catalog (name, slug, description, type, body_part, equipment, level, multiplier, base_weight_kg, links)
+values ($1, $2, $3, $4, $5, $6, $7, 1, 0, '{}'::text[])
 on conflict (slug) do update
 set name = excluded.name,
     description = excluded.description,
@@ -206,8 +263,27 @@ set name = excluded.name,
     equipment = excluded.equipment,
     level = excluded.level
 `
-	_, err := tx.ExecContext(ctx, q, r.Title, slug, r.Desc, r.Type, r.BodyPart, r.Equipment, r.Level)
-	return err
+	if _, err := tx.ExecContext(ctx, q, r.Title, slug, r.Desc, typeVal, bodyPart, equipment, level); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `delete from exercise_catalog_primary_muscles where catalog_id = (select id from exercise_catalog where slug = $1)`, slug); err != nil {
+		return err
+	}
+	for _, muscle := range primaryList {
+		if _, err := tx.ExecContext(ctx, `
+			insert into exercise_catalog_primary_muscles (catalog_id, muscle)
+			select id, $2 from exercise_catalog where slug = $1
+			on conflict do nothing`, slug, muscle); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-
+func defaultString(value, fallback string) string {
+	v := strings.TrimSpace(value)
+	if v == "" {
+		return fallback
+	}
+	return v
+}

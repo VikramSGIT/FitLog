@@ -99,7 +99,12 @@ func (s *Days) GetWithDetails(ctx context.Context, userID, dayID string) (*model
 		if err != nil {
 			return nil, err
 		}
+		rests, err := s.listRestPeriodsByExercise(ctx, exercises[i].ID)
+		if err != nil {
+			return nil, err
+		}
 		exercises[i].Sets = sets
+		exercises[i].Timeline = buildExerciseTimeline(sets, rests)
 	}
 	return &models.DayWithDetails{WorkoutDay: *day, Exercises: exercises}, nil
 }
@@ -128,7 +133,7 @@ func (s *Days) SetRestDay(ctx context.Context, userID, dayID string, rest bool) 
 func (s *Days) ListSetsByExercise(ctx context.Context, exerciseID string) ([]models.Set, error) {
 	rows, err := s.db.QueryxContext(ctx, `
 		select id, exercise_id, user_id, workout_date, position, reps, weight_kg, rpe,
-		       is_warmup, rest_seconds, tempo, performed_at, drop_set_group_id,
+		       is_warmup, rest_seconds, tempo, performed_at,
 		       volume_kg, created_at, updated_at
 		from sets
 		where exercise_id = $1
@@ -147,4 +152,85 @@ func (s *Days) ListSetsByExercise(ctx context.Context, exerciseID string) ([]mod
 		out = append(out, s)
 	}
 	return out, nil
+}
+
+func (s *Days) listRestPeriodsByExercise(ctx context.Context, exerciseID string) ([]models.RestPeriod, error) {
+	rows, err := s.db.QueryxContext(ctx, `
+		select id, exercise_id, position, duration_seconds, created_at, updated_at
+		from rest_periods
+		where exercise_id = $1
+		order by position, created_at
+	`, exerciseID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []models.RestPeriod
+	for rows.Next() {
+		var rp models.RestPeriod
+		if err := rows.StructScan(&rp); err != nil {
+			return nil, err
+		}
+		out = append(out, rp)
+	}
+	return out, nil
+}
+
+func buildExerciseTimeline(sets []models.Set, rests []models.RestPeriod) []models.ExerciseEntry {
+	if len(sets) == 0 && len(rests) == 0 {
+		return nil
+	}
+	buckets := make(map[int][]models.RestPeriod)
+	for _, rp := range rests {
+		if rp.Position < 0 {
+			continue
+		}
+		buckets[rp.Position] = append(buckets[rp.Position], rp)
+	}
+	var timeline []models.ExerciseEntry
+	// Rest periods positioned before the first set use position 0
+	if head := buckets[0]; len(head) > 0 {
+		for _, rp := range head {
+			restCopy := rp
+			timeline = append(timeline, models.ExerciseEntry{Kind: "rest", Rest: &restCopy})
+		}
+		delete(buckets, 0)
+	}
+	for _, set := range sets {
+		setCopy := set
+		timeline = append(timeline, models.ExerciseEntry{Kind: "set", Set: &setCopy})
+		if nextRests := buckets[set.Position]; len(nextRests) > 0 {
+			for _, rp := range nextRests {
+				restCopy := rp
+				timeline = append(timeline, models.ExerciseEntry{Kind: "rest", Rest: &restCopy})
+			}
+			delete(buckets, set.Position)
+		}
+	}
+	// Append any remaining rest periods (positions without matching sets)
+	if len(buckets) > 0 {
+		type bucket struct {
+			position int
+			items    []models.RestPeriod
+		}
+		var leftovers []bucket
+		for pos, rps := range buckets {
+			leftovers = append(leftovers, bucket{position: pos, items: rps})
+		}
+		// simple insertion sort by position
+		for i := 1; i < len(leftovers); i++ {
+			j := i
+			for j > 0 && leftovers[j-1].position > leftovers[j].position {
+				leftovers[j-1], leftovers[j] = leftovers[j], leftovers[j-1]
+				j--
+			}
+		}
+		for _, b := range leftovers {
+			for _, rp := range b.items {
+				restCopy := rp
+				timeline = append(timeline, models.ExerciseEntry{Kind: "rest", Rest: &restCopy})
+			}
+		}
+	}
+	return timeline
 }

@@ -1,18 +1,20 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { ActionIcon, AppShell, Box, Button, Center, Container, Group, Loader, Menu, Modal, Paper, PasswordInput, Stack, Text, TextInput, Title, Tooltip, useMantineTheme } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
 import { IconLogout, IconLogin, IconBook2, IconMail, IconLock, IconSparkles, IconPalette, IconCheck } from '@tabler/icons-react'
 import { motion } from 'framer-motion'
-import ExerciseList from '@/components/ExerciseList'
-import CatalogBrowser from '@/components/CatalogBrowser'
 import { useWorkoutStore } from '@/store/useWorkoutStore'
 import { api, DayWithDetails } from '@/api/client'
 import { format } from 'date-fns'
-import CatalogPage from './pages/CatalogPage'
 import { DEFAULT_SURFACES, ThemeSurfaces, useThemePreset } from './theme'
 import HeaderBar from '@/components/HeaderBar'
+
+const ExerciseList = lazy(() => import('@/components/ExerciseList'))
+const CatalogBrowser = lazy(() => import('@/components/CatalogBrowser'))
+const CatalogPage = lazy(() => import('./pages/CatalogPage'))
+const CatalogCreatePage = lazy(() => import('./pages/CatalogCreatePage'))
 
 const MotionPaper = motion.create(Paper)
 const MotionBox = motion.create(Box)
@@ -252,7 +254,15 @@ function Home() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.4 }}
               >
+                <Suspense
+                  fallback={
+                    <Center py="xl">
+                      <Loader />
+                    </Center>
+                  }
+              >
                 <ExerciseList onAddFromCatalog={() => setCatalogOpen(true)} />
+                </Suspense>
               </MotionPaper>
             </Stack>
           </Container>
@@ -294,7 +304,15 @@ function Home() {
           }
         }}
       >
+        <Suspense
+          fallback={
+            <Center py="lg">
+              <Loader size="sm" />
+            </Center>
+          }
+      >
         <CatalogBrowser embedded onClose={() => setCatalogOpen(false)} />
+        </Suspense>
       </Modal>
     </>
   )
@@ -303,11 +321,21 @@ function Home() {
 export default function App() {
   return (
     <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <Suspense
+        fallback={
+          <Center mih="100vh">
+            <Loader />
+          </Center>
+        }
+      >
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/catalog" element={<CatalogPage />} />
+        <Route path="/catalog/new" element={<CatalogCreatePage />} />
+        <Route path="/catalog/:catalogId/edit" element={<CatalogCreatePage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </Suspense>
     </BrowserRouter>
   )
 }

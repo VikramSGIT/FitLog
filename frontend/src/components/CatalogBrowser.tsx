@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
-import { api } from '@/api/client'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { api, CatalogItem } from '@/api/client'
 import { useWorkoutStore } from '@/store/useWorkoutStore'
 import {
   ActionIcon,
@@ -27,35 +27,27 @@ import {
   IconBarbell,
   IconX,
   IconAdjustments,
-  IconArrowLeft
+  IconArrowLeft,
+  IconPencil
 } from '@tabler/icons-react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useMediaQuery } from '@mantine/hooks'
 import { DEFAULT_SURFACES, ThemeSurfaces } from '@/theme'
 
-type CatalogItem = {
-  id: string
-  name: string
-  type?: string
-  bodyPart?: string
-  equipment?: string
-  level?: string
-  primaryMuscle?: string
-  secondaryMuscles?: string[]
-}
-
 type CatalogBrowserProps = {
   embedded?: boolean
   onClose?: () => void
+  headerAddon?: React.ReactNode
 }
 
 const toSelectOptions = (values: string[]) => values.map((value) => ({ value, label: value }))
 
-export default function CatalogBrowser({ embedded = false, onClose }: CatalogBrowserProps) {
+export default function CatalogBrowser({ embedded = false, onClose, headerAddon }: CatalogBrowserProps) {
   const day = useWorkoutStore((s) => s.day)
   const addExerciseLocal = useWorkoutStore((s) => s.addExerciseLocal)
   const dayLoading = useWorkoutStore((s) => s.dayLoading)
   const isRestDay = day?.isRestDay ?? false
+  const navigate = useNavigate()
   const theme = useMantineTheme()
   const isMobile = useMediaQuery('(max-width: 640px)')
   const surfaces = (theme.other?.surfaces as ThemeSurfaces) ?? DEFAULT_SURFACES
@@ -156,7 +148,7 @@ export default function CatalogBrowser({ embedded = false, onClose }: CatalogBro
     const exercises = Array.isArray(day.exercises) ? day.exercises : []
     const position = (exercises[exercises.length - 1]?.position ?? 0) + 1
     try {
-      const created = await api.createExercise(day.id, { name: item.name, position, catalogId: item.id })
+      const created = await api.createExercise(day.id, { position, catalogId: item.id })
       addExerciseLocal({ ...created, sets: [] })
       if (embedded) {
         onClose?.()
@@ -165,6 +157,13 @@ export default function CatalogBrowser({ embedded = false, onClose }: CatalogBro
       console.error(err)
       alert('Failed to add exercise.')
     }
+  }
+
+  function handleEdit(itemId: string) {
+    if (embedded) {
+      onClose?.()
+    }
+    navigate(`/catalog/${itemId}/edit`)
   }
 
   const cards = (
@@ -213,40 +212,69 @@ export default function CatalogBrowser({ embedded = false, onClose }: CatalogBro
                 c="dimmed"
                 style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}
               >
-                {it.primaryMuscle || 'N/A'}
+                {(it.primaryMuscles?.length ? it.primaryMuscles.join(', ') : 'N/A') ?? 'N/A'}
                 {it.secondaryMuscles?.length ? ` · ${it.secondaryMuscles.join(', ')}` : ''}
               </Text>
-              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <Group gap={isMobile ? 8 : 'sm'} justify="flex-end">
                 {isMobile ? (
-                  <ActionIcon
-                    size="lg"
-                    radius="md"
-                    aria-label="Add to day"
-                    onClick={() => addToDay(it)}
-                    disabled={!canAddToDay}
-                    style={{
-                      backgroundImage: accentGradient,
-                      color: buttonTextColor,
-                      border: 'none'
-                    }}
-                  >
-                    <IconPlus size={18} />
-                  </ActionIcon>
+                  <>
+                    <ActionIcon
+                      size="lg"
+                      radius="md"
+                      aria-label="Edit catalog exercise"
+                      onClick={() => handleEdit(it.id)}
+                      style={{
+                        background: theme.colorScheme === 'light' ? '#ffffff' : surfaces.card,
+                        border: `1px solid ${surfaces.border}`,
+                        color: baseTextColor
+                      }}
+                    >
+                      <IconPencil size={18} />
+                    </ActionIcon>
+                    <ActionIcon
+                      size="lg"
+                      radius="md"
+                      aria-label="Add to day"
+                      onClick={() => addToDay(it)}
+                      disabled={!canAddToDay}
+                      style={{
+                        backgroundImage: accentGradient,
+                        color: buttonTextColor,
+                        border: 'none'
+                      }}
+                    >
+                      <IconPlus size={18} />
+                    </ActionIcon>
+                  </>
                 ) : (
-                  <Button
-                    leftSection={<IconPlus size={18} />}
-                    onClick={() => addToDay(it)}
-                    disabled={!canAddToDay}
-                    style={{
-                      backgroundImage: accentGradient,
-                      color: buttonTextColor,
-                      border: 'none'
-                    }}
-                  >
-                    {isRestDay ? 'Rest day' : dayLoading ? 'Loading...' : 'Add to day'}
-                  </Button>
+                  <>
+                    <Button
+                      variant="outline"
+                      leftSection={<IconPencil size={18} />}
+                      onClick={() => handleEdit(it.id)}
+                      style={{
+                        background: surfaces.card,
+                        border: `1px solid ${surfaces.border}`,
+                        color: baseTextColor
+                      }}
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      leftSection={<IconPlus size={18} />}
+                      onClick={() => addToDay(it)}
+                      disabled={!canAddToDay}
+                      style={{
+                        backgroundImage: accentGradient,
+                        color: buttonTextColor,
+                        border: 'none'
+                      }}
+                    >
+                      {isRestDay ? 'Rest day' : dayLoading ? 'Loading...' : 'Add to day'}
+                    </Button>
+                  </>
                 )}
-              </div>
+              </Group>
             </div>
           </Card>
         </motion.div>
@@ -274,8 +302,13 @@ export default function CatalogBrowser({ embedded = false, onClose }: CatalogBro
       }
     >
               {!embedded && (
-        <Stack gap={4}>
-          <Title order={2}>Exercise catalog</Title>
+        <Stack gap={6}>
+          <Group justify="space-between" align="center">
+            <Title order={2} style={{ margin: 0 }}>
+              Exercise catalog
+            </Title>
+            {headerAddon}
+          </Group>
           <Text size="sm" c="dimmed">
             Search thousands of movements by muscle group, equipment, or difficulty.
           </Text>

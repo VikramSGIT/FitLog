@@ -93,17 +93,19 @@ func main() {
 				r.Post("/exercises/{id}/sets", setsHandler.Create)
 				r.Patch("/sets/{id}", setsHandler.Update)
 				r.Delete("/sets/{id}", setsHandler.Delete)
+				r.Post("/exercises/{id}/rests", setsHandler.CreateRest)
+				r.Patch("/rests/{id}", setsHandler.UpdateRest)
+				r.Delete("/rests/{id}", setsHandler.DeleteRest)
 
 				// Catalog search
 				r.Get("/catalog", catalogHandler.Search)
 				r.Get("/catalog/facets", catalogHandler.Facets)
+				r.Get("/catalog/entries/{id}", catalogHandler.GetEntry)
+				r.Put("/catalog/entries/{id}", catalogHandler.UpdateEntry)
 
 				// Admin-only routes
-				r.Route("/admin", func(r chi.Router) {
-					r.Use(adminHandler.AdminOnly)
-					r.Post("/catalog", adminHandler.UpsertCatalogJSON)
-					r.Post("/catalog/csv", adminHandler.UpsertCatalogCSV)
-				})
+				r.Post("/catalog/admin/import", adminHandler.UpsertCatalogJSON)
+				r.Post("/catalog/admin/import/csv", adminHandler.UpsertCatalogCSV)
 			})
 		})
 	})
@@ -132,5 +134,3 @@ func main() {
 	defer cancel()
 	_ = srv.Shutdown(ctx)
 }
-
-

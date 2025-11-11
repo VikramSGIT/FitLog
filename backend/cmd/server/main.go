@@ -111,6 +111,7 @@ func main() {
 
 				// Batch save
 				r.Post("/save", saveHandler.Handle)
+				r.Get("/save/epoch", saveHandler.Epoch)
 			})
 		})
 	})

@@ -15,6 +15,9 @@ create table if not exists users (
   updated_at timestamptz default now()
 );
 
+-- Epoch used to validate client save batches. Maintained per user.
+alter table users add column if not exists save_epoch bigint not null default 0;
+
 -- Reference tables
 create table if not exists exercise_types (
   name text primary key

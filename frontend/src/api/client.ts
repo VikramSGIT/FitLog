@@ -157,6 +157,7 @@ export const api = {
     request<DayWithDetails>('/api/days', { method: 'POST', body: JSON.stringify({ date }) }),
   updateDay: (dayId: string, data: { isRestDay: boolean }) =>
     request<DayWithDetails>(`/api/days/${dayId}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  getSaveEpoch: () => request<{ serverEpoch: number }>('/api/save/epoch'),
 
   // Exercises
   createExercise: (dayId: string, data: { position: number; catalogId: string; comment?: string }) =>
@@ -232,23 +233,40 @@ export const api = {
       | { type: 'deleteRest'; id: string }
       | { type: 'updateDay'; dayId: string; isRestDay: boolean }
     >,
-    idempotencyKey?: string
+    idempotencyKey?: string,
+    clientEpoch?: number
   ) =>
-    request<{
-      applied: boolean
-      mapping: {
-        exercises: { tempId: string; id: string }[]
-        sets: { tempId: string; id: string }[]
-        rests: { tempId: string; id: string }[]
-      }
-      updatedAt: string
-    }>('/api/save', {
-      method: 'POST',
-      body: JSON.stringify({
-        version: 'v1',
-        idempotencyKey,
-        ops
+    (async () => {
+      const res = await fetch(`${API_BASE}/api/save`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          version: 'v1',
+          idempotencyKey,
+          clientEpoch: clientEpoch ?? Number(localStorage.getItem('saveEpoch') || '0'),
+          ops
+        })
       })
-    })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        const code = (data && data.error && data.error.code) || ''
+        const serverEpoch = data && data.serverEpoch
+        const err = new Error(code || `HTTP ${res.status}`)
+        ;(err as any).code = code
+        ;(err as any).serverEpoch = serverEpoch
+        throw err
+      }
+      return data as {
+        applied: boolean
+        mapping: {
+          exercises: { tempId: string; id: string }[]
+          sets: { tempId: string; id: string }[]
+          rests: { tempId: string; id: string }[]
+        }
+        updatedAt: string
+        serverEpoch: number
+      }
+    })()
 };
 

@@ -88,7 +88,7 @@ export type WorkoutState = {
   autoSaveHandlers: Set<() => Promise<boolean>>
   // Batched op-log
   opLog: Array<
-    | { type: 'createExercise'; tempId: string; dayId: string; catalogId: string; position: number; comment?: string }
+    | { type: 'createExercise'; tempId: string; dayId: string; catalogId: string; position: number; comment?: string; displayName?: string }
     | { type: 'createSet'; tempId: string; exerciseId: string; position: number; reps: number; weightKg: number; isWarmup?: boolean }
     | { type: 'updateExercise'; id: string; patch: Partial<{ position: number; comment: string }> }
     | { type: 'updateSet'; id: string; patch: Partial<{ position: number; reps: number; weightKg: number; isWarmup: boolean }> }
@@ -156,6 +156,247 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
       exercises: Array.isArray(day.exercises) ? day.exercises.map((ex) => normalizeExercise(ex)) : []
     }
     set({ day: normalized, dayLoading: false })
+    // Capture epoch from server to anchor hydration
+    ;(async () => {
+      try {
+        const res = await api.getSaveEpoch()
+        if (res && typeof res.serverEpoch === 'number' && !Number.isNaN(res.serverEpoch)) {
+          localStorage.setItem('saveEpoch', String(res.serverEpoch))
+        }
+      } catch {}
+    })()
+    // Hydrate persisted op-log for this day if present and not stale
+    try {
+      const state = get()
+      const key = `oplog:v1:${normalized.id}`
+      const saved = localStorage.getItem(key)
+      if (saved) {
+        const parsed = JSON.parse(saved) as { dayId: string; baseEpoch?: number; ops?: WorkoutState['opLog'] }
+        const currentEpoch = Number(localStorage.getItem('saveEpoch') || '0')
+        if (parsed && parsed.dayId === normalized.id && Array.isArray(parsed.ops)) {
+          if (!parsed.baseEpoch || parsed.baseEpoch >= currentEpoch) {
+            // restore and replay locally to reflect pending changes
+            if (state.opLog.length === 0) {
+              set({ opLog: parsed.ops })
+            }
+            const replay = (ops: WorkoutState['opLog']) => {
+              ops.forEach((op) => {
+                switch (op.type) {
+                  case 'updateDay':
+                    set((st) => ({ day: st.day ? { ...st.day, isRestDay: op.isRestDay } : st.day }))
+                    break;
+                  case 'createExercise': {
+                    const dcur = get().day
+                    const exists = dcur?.exercises?.some((e) => e.id === op.tempId)
+                    if (exists) break
+                    const ex: Exercise = {
+                      id: op.tempId,
+                      dayId: op.dayId,
+                      catalogId: op.catalogId,
+                      name: op.displayName || 'Pending exercise',
+                      position: op.position,
+                      comment: op.comment,
+                      sets: []
+                    }
+                    get().addExerciseLocal(ex)
+                    break;
+                  }
+                  case 'deleteExercise':
+                    get().removeExerciseLocal(op.id)
+                    break;
+                  case 'updateExercise':
+                    get().updateExerciseLocal(op.id, op.patch as any)
+                    break;
+                  case 'reorderExercises': {
+                    const d2 = get().day
+                    if (d2 && d2.id === op.dayId) {
+                      const idToPos = new Map<string, number>()
+                      op.orderedIds.forEach((id, idx) => idToPos.set(id, idx))
+                      const next = d2.exercises.map((e) => ({ ...e, position: idToPos.get(e.id) ?? e.position }))
+                      set({ day: { ...d2, exercises: next.sort((a, b) => a.position - b.position) } })
+                    }
+                    break;
+                  }
+                  case 'createSet': {
+                    const d2 = get().day
+                    if (!d2) break
+                    const ex = d2.exercises.find((e) => e.id === op.exerciseId)
+                    const already = ex?.sets?.some((s) => s.id === op.tempId)
+                    if (already) break
+                    const s: WorkoutSet = {
+                      id: op.tempId,
+                      exerciseId: op.exerciseId,
+                      userId: '',
+                      workoutDate: d2.workoutDate,
+                      position: op.position,
+                      reps: op.reps,
+                      weightKg: op.weightKg,
+                      isWarmup: Boolean(op.isWarmup),
+                      volumeKg: op.reps * op.weightKg
+                    }
+                    get().addSetLocal(op.exerciseId, s)
+                    break;
+                  }
+                  case 'deleteSet':
+                    get().removeSetLocal(op.id)
+                    break;
+                  case 'updateSet':
+                    get().updateSetLocal(op.id, op.patch as any)
+                    break;
+                  case 'reorderSets': {
+                    const d2 = get().day
+                    if (!d2) break
+                    const ex = d2.exercises.find((e) => e.id === op.exerciseId)
+                    if (!ex) break
+                    const idToPos = new Map<string, number>()
+                    op.orderedIds.forEach((id, idx) => idToPos.set(id, idx))
+                    const updated = ex.sets.map((s) => ({ ...s, position: idToPos.get(s.id) ?? s.position }))
+                    get().updateExerciseLocal(op.exerciseId, { sets: updated.sort((a, b) => a.position - b.position) } as any)
+                    break;
+                  }
+                  case 'createRest': {
+                    const d2 = get().day
+                    const ex = d2?.exercises.find((e) => e.id === op.exerciseId)
+                    const rExists = (ex as any)?.restPeriods?.some((rp: any) => rp.id === op.tempId)
+                    if (rExists) break
+                    const r: RestPeriod = {
+                      id: op.tempId,
+                      exerciseId: op.exerciseId,
+                      position: op.position,
+                      durationSeconds: op.durationSeconds,
+                      createdAt: new Date().toISOString(),
+                      updatedAt: new Date().toISOString()
+                    } as any
+                    get().addRestLocal(op.exerciseId, r)
+                    break;
+                  }
+                  case 'deleteRest':
+                    get().removeRestLocal(op.id)
+                    break;
+                  case 'updateRest':
+                    get().updateRestLocal(op.id, op.patch as any)
+                    break;
+                  default:
+                    break;
+                }
+              })
+            }
+            replay(parsed.ops)
+          } else {
+            // stale queue
+            localStorage.removeItem(key)
+          }
+        }
+      } else {
+        // No persisted ops; if there is an in-memory queue, replay it now so server state doesn't wipe UI effects
+        if (state.opLog.length > 0) {
+          const opsCopy = [...state.opLog]
+          const replay = (ops: WorkoutState['opLog']) => {
+            ops.forEach((op) => {
+              switch (op.type) {
+                case 'updateDay':
+                  set((st) => ({ day: st.day ? { ...st.day, isRestDay: op.isRestDay } : st.day }))
+                  break;
+                case 'createExercise': {
+                  const dcur = get().day
+                  const exists = dcur?.exercises?.some((e) => e.id === op.tempId)
+                  if (exists) break
+                  const ex: Exercise = {
+                    id: op.tempId,
+                    dayId: op.dayId,
+                    catalogId: op.catalogId,
+                    name: op.displayName || 'Pending exercise',
+                    position: op.position,
+                    comment: op.comment,
+                    sets: []
+                  }
+                  get().addExerciseLocal(ex)
+                  break;
+                }
+                case 'deleteExercise':
+                  get().removeExerciseLocal(op.id)
+                  break;
+                case 'updateExercise':
+                  get().updateExerciseLocal(op.id, op.patch as any)
+                  break;
+                case 'reorderExercises': {
+                  const d2 = get().day
+                  if (d2 && d2.id === op.dayId) {
+                    const idToPos = new Map<string, number>()
+                    op.orderedIds.forEach((id, idx) => idToPos.set(id, idx))
+                    const next = d2.exercises.map((e) => ({ ...e, position: idToPos.get(e.id) ?? e.position }))
+                    set({ day: { ...d2, exercises: next.sort((a, b) => a.position - b.position) } })
+                  }
+                  break;
+                }
+                case 'createSet': {
+                  const d2 = get().day
+                  if (!d2) break
+                  const ex = d2.exercises.find((e) => e.id === op.exerciseId)
+                  const already = ex?.sets?.some((s) => s.id === op.tempId)
+                  if (already) break
+                  const s: WorkoutSet = {
+                    id: op.tempId,
+                    exerciseId: op.exerciseId,
+                    userId: '',
+                    workoutDate: d2.workoutDate,
+                    position: op.position,
+                    reps: op.reps,
+                    weightKg: op.weightKg,
+                    isWarmup: Boolean(op.isWarmup),
+                    volumeKg: op.reps * op.weightKg
+                  }
+                  get().addSetLocal(op.exerciseId, s)
+                  break;
+                }
+                case 'deleteSet':
+                  get().removeSetLocal(op.id)
+                  break;
+                case 'updateSet':
+                  get().updateSetLocal(op.id, op.patch as any)
+                  break;
+                case 'reorderSets': {
+                  const d2 = get().day
+                  if (!d2) break
+                  const ex = d2.exercises.find((e) => e.id === op.exerciseId)
+                  if (!ex) break
+                  const idToPos = new Map<string, number>()
+                  op.orderedIds.forEach((id, idx) => idToPos.set(id, idx))
+                  const updated = ex.sets.map((s) => ({ ...s, position: idToPos.get(s.id) ?? s.position }))
+                  get().updateExerciseLocal(op.exerciseId, { sets: updated.sort((a, b) => a.position - b.position) } as any)
+                  break;
+                }
+                case 'createRest': {
+                  const d2 = get().day
+                  const ex = d2?.exercises.find((e) => e.id === op.exerciseId)
+                  const rExists = (ex as any)?.restPeriods?.some((rp: any) => rp.id === op.tempId)
+                  if (rExists) break
+                  const r: RestPeriod = {
+                    id: op.tempId,
+                    exerciseId: op.exerciseId,
+                    position: op.position,
+                    durationSeconds: op.durationSeconds,
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString()
+                  } as any
+                  get().addRestLocal(op.exerciseId, r)
+                  break;
+                }
+                case 'deleteRest':
+                  get().removeRestLocal(op.id)
+                  break;
+                case 'updateRest':
+                  get().updateRestLocal(op.id, op.patch as any)
+                  break;
+                default:
+                  break;
+              }
+            })
+          }
+          replay(opsCopy)
+        }
+      }
+    } catch {}
   },
   setDayLoading: (loading) => set({ dayLoading: loading }),
   setSaving: (state, mode) =>
@@ -225,12 +466,21 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
     }
     get().addExerciseLocal(ex)
     // Log op
-    set((state) => ({
-      opLog: [
+    set((state) => {
+      const nextLog = [
         ...state.opLog,
-        { type: 'createExercise', tempId, dayId, catalogId, position: pos, comment }
-      ]
-    }))
+        { type: 'createExercise', tempId, dayId, catalogId, position: pos, comment, displayName: nameDisplay }
+      ] as WorkoutState['opLog']
+      // persist
+      try {
+        if (d?.id) {
+          const key = `oplog:v1:${d.id}`
+          const baseEpoch = Number(localStorage.getItem('saveEpoch') || '0')
+          localStorage.setItem(key, JSON.stringify({ dayId: d.id, baseEpoch, createdAt: Date.now(), lastPersistedAt: Date.now(), ops: nextLog }))
+        }
+      } catch {}
+      return { opLog: nextLog }
+    })
     return tempId
   },
   queueCreateSet: (exerciseId, { position, reps, weightKg, isWarmup }) => {
@@ -251,22 +501,53 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
       }
       get().addSetLocal(exerciseId, setObj)
     }
-    set((state) => ({
-      opLog: [
+    set((state) => {
+      const nextLog = [
         ...state.opLog,
         { type: 'createSet', tempId, exerciseId, position, reps, weightKg, isWarmup: Boolean(isWarmup) }
-      ]
-    }))
+      ] as WorkoutState['opLog']
+      try {
+        const d2 = get().day
+        if (d2?.id) {
+          const key = `oplog:v1:${d2.id}`
+          const baseEpoch = Number(localStorage.getItem('saveEpoch') || '0')
+          localStorage.setItem(key, JSON.stringify({ dayId: d2.id, baseEpoch, createdAt: Date.now(), lastPersistedAt: Date.now(), ops: nextLog }))
+        }
+      } catch {}
+      return { opLog: nextLog }
+    })
     return tempId
   },
   queueUpdateExercise: (id, patch) => {
     // UI reflect change immediately
     get().updateExerciseLocal(id, patch as any)
-    set((state) => ({ opLog: [...state.opLog, { type: 'updateExercise', id, patch }] }))
+    set((state) => {
+      const nextLog = [...state.opLog, { type: 'updateExercise', id, patch }] as WorkoutState['opLog']
+      try {
+        const d = get().day
+        if (d?.id) {
+          const key = `oplog:v1:${d.id}`
+          const baseEpoch = Number(localStorage.getItem('saveEpoch') || '0')
+          localStorage.setItem(key, JSON.stringify({ dayId: d.id, baseEpoch, createdAt: Date.now(), lastPersistedAt: Date.now(), ops: nextLog }))
+        }
+      } catch {}
+      return { opLog: nextLog }
+    })
   },
   queueUpdateSet: (id, patch) => {
     get().updateSetLocal(id, patch as any)
-    set((state) => ({ opLog: [...state.opLog, { type: 'updateSet', id, patch }] }))
+    set((state) => {
+      const nextLog = [...state.opLog, { type: 'updateSet', id, patch }] as WorkoutState['opLog']
+      try {
+        const d = get().day
+        if (d?.id) {
+          const key = `oplog:v1:${d.id}`
+          const baseEpoch = Number(localStorage.getItem('saveEpoch') || '0')
+          localStorage.setItem(key, JSON.stringify({ dayId: d.id, baseEpoch, createdAt: Date.now(), lastPersistedAt: Date.now(), ops: nextLog }))
+        }
+      } catch {}
+      return { opLog: nextLog }
+    })
   },
   queueReorderExercises: (dayId, orderedIds) => {
     // Update local positions
@@ -282,7 +563,18 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
       })
       set({ day: { ...d, exercises: [...d.exercises].sort((a, b) => a.position - b.position) } })
     }
-    set((state) => ({ opLog: [...state.opLog, { type: 'reorderExercises', dayId, orderedIds }] }))
+    set((state) => {
+      const nextLog = [...state.opLog, { type: 'reorderExercises', dayId, orderedIds }] as WorkoutState['opLog']
+      try {
+        const d = get().day
+        if (d?.id) {
+          const key = `oplog:v1:${d.id}`
+          const baseEpoch = Number(localStorage.getItem('saveEpoch') || '0')
+          localStorage.setItem(key, JSON.stringify({ dayId: d.id, baseEpoch, createdAt: Date.now(), lastPersistedAt: Date.now(), ops: nextLog }))
+        }
+      } catch {}
+      return { opLog: nextLog }
+    })
   },
   queueReorderSets: (exerciseId, orderedIds) => {
     const d = get().day
@@ -298,23 +590,52 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
         get().updateExerciseLocal(exerciseId, { sets: [...ex.sets].sort((a, b) => a.position - b.position) } as any)
       }
     }
-    set((state) => ({ opLog: [...state.opLog, { type: 'reorderSets', exerciseId, orderedIds }] }))
+    set((state) => {
+      const nextLog = [...state.opLog, { type: 'reorderSets', exerciseId, orderedIds }] as WorkoutState['opLog']
+      try {
+        const d = get().day
+        if (d?.id) {
+          const key = `oplog:v1:${d.id}`
+          const baseEpoch = Number(localStorage.getItem('saveEpoch') || '0')
+          localStorage.setItem(key, JSON.stringify({ dayId: d.id, baseEpoch, createdAt: Date.now(), lastPersistedAt: Date.now(), ops: nextLog }))
+        }
+      } catch {}
+      return { opLog: nextLog }
+    })
   },
   queueDeleteExercise: (id) => {
     // Remove from UI immediately but always push delete op (temp or persisted)
     get().removeExerciseLocal(id)
-    set((state) => ({
-      hiddenIds: new Set<string>([...state.hiddenIds, id]),
-      opLog: [...state.opLog, { type: 'deleteExercise', id }]
-    }))
+    set((state) => {
+      const nextLog = [...state.opLog, { type: 'deleteExercise', id }] as WorkoutState['opLog']
+      const nextHidden = new Set<string>([...state.hiddenIds, id])
+      try {
+        const d = get().day
+        if (d?.id) {
+          const key = `oplog:v1:${d.id}`
+          const baseEpoch = Number(localStorage.getItem('saveEpoch') || '0')
+          localStorage.setItem(key, JSON.stringify({ dayId: d.id, baseEpoch, createdAt: Date.now(), lastPersistedAt: Date.now(), ops: nextLog }))
+        }
+      } catch {}
+      return { opLog: nextLog, hiddenIds: nextHidden }
+    })
   },
   queueDeleteSet: (id) => {
     // Remove from UI immediately but always push delete op (temp or persisted)
     get().removeSetLocal(id)
-    set((state) => ({
-      hiddenIds: new Set<string>([...state.hiddenIds, id]),
-      opLog: [...state.opLog, { type: 'deleteSet', id }]
-    }))
+    set((state) => {
+      const nextLog = [...state.opLog, { type: 'deleteSet', id }] as WorkoutState['opLog']
+      const nextHidden = new Set<string>([...state.hiddenIds, id])
+      try {
+        const d = get().day
+        if (d?.id) {
+          const key = `oplog:v1:${d.id}`
+          const baseEpoch = Number(localStorage.getItem('saveEpoch') || '0')
+          localStorage.setItem(key, JSON.stringify({ dayId: d.id, baseEpoch, createdAt: Date.now(), lastPersistedAt: Date.now(), ops: nextLog }))
+        }
+      } catch {}
+      return { opLog: nextLog, hiddenIds: nextHidden }
+    })
   },
   queueCreateRest: (exerciseId, { position, durationSeconds }) => {
     const tempId = `temp-rest-${get().tempIdCounter}`
@@ -331,29 +652,69 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
       } as any
       get().addRestLocal(exerciseId, restObj)
     }
-    set((state) => ({
-      opLog: [...state.opLog, { type: 'createRest', tempId, exerciseId, position, durationSeconds }]
-    }))
+    set((state) => {
+      const nextLog = [...state.opLog, { type: 'createRest', tempId, exerciseId, position, durationSeconds }] as WorkoutState['opLog']
+      try {
+        const d2 = get().day
+        if (d2?.id) {
+          const key = `oplog:v1:${d2.id}`
+          const baseEpoch = Number(localStorage.getItem('saveEpoch') || '0')
+          localStorage.setItem(key, JSON.stringify({ dayId: d2.id, baseEpoch, createdAt: Date.now(), lastPersistedAt: Date.now(), ops: nextLog }))
+        }
+      } catch {}
+      return { opLog: nextLog }
+    })
     return tempId
   },
   queueUpdateRest: (id, patch) => {
     get().updateRestLocal(id, patch as any)
-    set((state) => ({ opLog: [...state.opLog, { type: 'updateRest', id, patch }] }))
+    set((state) => {
+      const nextLog = [...state.opLog, { type: 'updateRest', id, patch }] as WorkoutState['opLog']
+      try {
+        const d = get().day
+        if (d?.id) {
+          const key = `oplog:v1:${d.id}`
+          const baseEpoch = Number(localStorage.getItem('saveEpoch') || '0')
+          localStorage.setItem(key, JSON.stringify({ dayId: d.id, baseEpoch, createdAt: Date.now(), lastPersistedAt: Date.now(), ops: nextLog }))
+        }
+      } catch {}
+      return { opLog: nextLog }
+    })
   },
   queueDeleteRest: (id) => {
     // Remove from UI immediately but always push delete op (temp or persisted)
     get().removeRestLocal(id)
-    set((state) => ({
-      hiddenIds: new Set<string>([...state.hiddenIds, id]),
-      opLog: [...state.opLog, { type: 'deleteRest', id }]
-    }))
+    set((state) => {
+      const nextLog = [...state.opLog, { type: 'deleteRest', id }] as WorkoutState['opLog']
+      const nextHidden = new Set<string>([...state.hiddenIds, id])
+      try {
+        const d = get().day
+        if (d?.id) {
+          const key = `oplog:v1:${d.id}`
+          const baseEpoch = Number(localStorage.getItem('saveEpoch') || '0')
+          localStorage.setItem(key, JSON.stringify({ dayId: d.id, baseEpoch, createdAt: Date.now(), lastPersistedAt: Date.now(), ops: nextLog }))
+        }
+      } catch {}
+      return { opLog: nextLog, hiddenIds: nextHidden }
+    })
   },
   queueUpdateDay: (dayId, isRestDay) => {
     const d = get().day
     if (d && d.id === dayId) {
       set({ day: { ...d, isRestDay } })
     }
-    set((state) => ({ opLog: [...state.opLog, { type: 'updateDay', dayId, isRestDay }] }))
+    set((state) => {
+      const nextLog = [...state.opLog, { type: 'updateDay', dayId, isRestDay }] as WorkoutState['opLog']
+      try {
+        const d2 = get().day
+        if (d2?.id) {
+          const key = `oplog:v1:${d2.id}`
+          const baseEpoch = Number(localStorage.getItem('saveEpoch') || '0')
+          localStorage.setItem(key, JSON.stringify({ dayId: d2.id, baseEpoch, createdAt: Date.now(), lastPersistedAt: Date.now(), ops: nextLog }))
+        }
+      } catch {}
+      return { opLog: nextLog }
+    })
   },
   flushOpLog: async () => {
     const state = get()
@@ -402,7 +763,7 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
         }
         return op
       })
-      const res = await api.saveBatch(withTempRefs as any, crypto.randomUUID?.() || `${Date.now()}`)
+      const res = await api.saveBatch(withTempRefs as any, crypto.randomUUID?.() || `${Date.now()}`, Number(localStorage.getItem('saveEpoch') || '0'))
       // Apply mapping for temp IDs
       const exerciseMap = new Map<string, string>()
       const setMap = new Map<string, string>()
@@ -439,9 +800,34 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
       }
       // Clear op log on success
       set({ opLog: [] })
+      // Persist server epoch for future batches
+      if (typeof res.serverEpoch === 'number' && !Number.isNaN(res.serverEpoch)) {
+        localStorage.setItem('saveEpoch', String(res.serverEpoch))
+        try {
+          const d3 = get().day
+          if (d3?.id) {
+            localStorage.removeItem(`oplog:v1:${d3.id}`)
+          }
+        } catch {}
+      }
       return true
     } catch (e) {
       console.error('flushOpLog failed', e)
+      const code = (e as any)?.code
+      if (code === 'stale_epoch') {
+        // Invalidate local queue and reload to server truth
+        try {
+          const d4 = get().day
+          if (d4?.id) {
+            localStorage.removeItem(`oplog:v1:${d4.id}`)
+          }
+        } catch {}
+        set({ opLog: [] })
+        // Hard reload to ensure full resync
+        if (typeof window !== 'undefined' && window.location) {
+          window.location.reload()
+        }
+      }
       return false
     } finally {
       set({ flushInFlight: false })

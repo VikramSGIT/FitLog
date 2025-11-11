@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -303,11 +304,16 @@ func (s *Save) ProcessBatch(ctx context.Context, userID string, rawOps []json.Ra
 				return SaveMapping{}, time.Time{}, fmt.Errorf("invalid reference for createRest.exerciseId: %s", op.ExerciseID)
 			}
 			const qCreateRest = `
+				with allowed as (
+				  select e.id as exercise_id
+				  from exercises e
+				  join workout_days d on d.id = e.day_id
+				  where e.id = $1 and d.user_id = $2
+				)
 				insert into rest_periods (exercise_id, position, duration_seconds)
-				select $1, $3, $4
-				from exercises e
-				join workout_days d on d.id = e.day_id
-				where e.id = $1 and d.user_id = $2
+				select (select exercise_id from allowed), $3, $4
+				on conflict (exercise_id, position)
+				do update set duration_seconds = excluded.duration_seconds, updated_at = now()
 				returning id
 			`
 			var realRestID string
@@ -781,6 +787,24 @@ func safeStr(s string) string {
 		return "-"
 	}
 	return s
+}
+
+// CurrentEpoch returns the stored epoch for a user, or 0 on error/missing.
+func (s *Save) CurrentEpoch(ctx context.Context, userID string) int64 {
+	var epoch sql.NullInt64
+	if err := s.db.QueryRowxContext(ctx, `select save_epoch from users where id = $1`, userID).Scan(&epoch); err != nil {
+		return 0
+	}
+	if epoch.Valid {
+		return epoch.Int64
+	}
+	return 0
+}
+
+// SetEpoch updates the user's epoch to the provided value.
+func (s *Save) SetEpoch(ctx context.Context, userID string, epoch int64) error {
+	_, err := s.db.ExecContext(ctx, `update users set save_epoch = $2 where id = $1`, userID, epoch)
+	return err
 }
 
 

@@ -216,11 +216,11 @@ export default function CatalogCreatePage() {
   }, [catalogId, navigate])
 
 const updateField = <K extends keyof FormState>(field: K, value: FormState[K]) => {
-  setForm((prev) => ({ ...prev, [field]: value }))
-  if (fieldErrors[field as keyof FieldErrorMap]) {
-    setFieldErrors((prev) => ({ ...prev, [field as keyof FieldErrorMap]: null }))
+    setForm((prev) => ({ ...prev, [field]: value }))
+    if (fieldErrors[field as keyof FieldErrorMap]) {
+      setFieldErrors((prev) => ({ ...prev, [field as keyof FieldErrorMap]: null }))
+    }
   }
-}
 
   const validateSelect = (value: string, options: string[], label: string) => {
     const trimmed = value.trim()

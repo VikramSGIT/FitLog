@@ -22,7 +22,7 @@ func NewRouter(frontendOrigin string, authMw func(http.Handler) http.Handler, re
 	if frontendOrigin != "" {
 		r.Use(cors.Handler(cors.Options{
 			AllowedOrigins:   []string{frontendOrigin},
-			AllowedMethods:   []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
+			AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 			AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
 			ExposedHeaders:   []string{"Link"},
 			AllowCredentials: true,
@@ -32,7 +32,7 @@ func NewRouter(frontendOrigin string, authMw func(http.Handler) http.Handler, re
 		// dev-friendly permissive CORS
 		r.Use(cors.Handler(cors.Options{
 			AllowedOrigins:   []string{"*"},
-			AllowedMethods:   []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
+			AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 			AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
 			ExposedHeaders:   []string{"Link"},
 			AllowCredentials: true,

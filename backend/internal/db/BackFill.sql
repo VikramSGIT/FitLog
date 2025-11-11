@@ -1,4 +1,4 @@
-INSERT INTO equipment_type (name) VALUES ('Machine'), ('Cable'), ('EZ Bar'), ('Barbell'), ('Body Weight');
+INSERT INTO equipment_type (name) VALUES ('Machine'), ('Cable'), ('EZ Bar'), ('Barbell'), ('Body Weight'), ('Dumbbell');
 INSERT INTO muscle_types (name) VALUES
     ('Pectorals'),
     ('Latissimus Dorsi'),

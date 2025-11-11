@@ -274,7 +274,7 @@ set name = excluded.name,
 			insert into exercise_catalog_primary_muscles (catalog_id, muscle)
 			select id, $2 from exercise_catalog where slug = $1
 			on conflict do nothing`, slug, muscle); err != nil {
-			return err
+	return err
 		}
 	}
 	return nil

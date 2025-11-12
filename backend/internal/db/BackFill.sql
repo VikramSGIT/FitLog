@@ -1,4 +1,11 @@
-INSERT INTO equipment_type (name) VALUES ('Machine'), ('Cable'), ('EZ Bar'), ('Barbell'), ('Body Weight'), ('Dumbbell');
+INSERT INTO equipment_types (name) VALUES
+    ('Machine'),
+    ('Cable'),
+    ('EZ Bar'),
+    ('Barbell'),
+    ('Dumbbell'),
+    ('Body Weight'),
+    ('Plates');
 INSERT INTO muscle_types (name) VALUES
     ('Pectorals'),
     ('Latissimus Dorsi'),
@@ -14,7 +21,25 @@ INSERT INTO muscle_types (name) VALUES
     ('Gastrocnemius'),
     ('Soleus'),
     ('Hip Flexors'),
-	('Erector Spinae');
-INSERT INTO exercise_types (name) VALUES ('Strength'), ('Hyperprophy');
-INSERT INTO levels (name) VALUES ('Beginner'), ('Intermediate'), ('Expert');
-INSERT INTO body_parts (name) VALUES ('Lower Back'), ('Upper Back'), ('Chest'), ('Abdomen'), ('Legs'), ('Arms'), ('Shoulder'), ('Calves'), ('Forearms'), ('Neck');
+	('Erector Spinae'),
+	('Adductors');
+INSERT INTO exercise_types (name) VALUES 
+    ('Strength'),
+    ('Hyperprophy'),
+    ('Cardio');
+INSERT INTO levels (name) VALUES
+    ('Beginner'),
+    ('Intermediate'),
+    ('Advanced'),
+    ('Expert');
+INSERT INTO body_parts (name) VALUES 
+	('Lower Back'),
+	('Upper Back'),
+	('Chest'),
+	('Abdomen'),
+	('Legs'),
+	('Arms'),
+	('Shoulder'),
+	('Calves'),
+	('Forearms'),
+	('Neck');

@@ -104,7 +104,7 @@ export default function CatalogCreatePage() {
     (theme.colorScheme === 'light' ? 'rgba(15, 23, 42, 0.65)' : 'rgba(226, 232, 240, 0.72)')
   const accentGradient = (theme.other?.accentGradient as string) ?? 'linear-gradient(135deg, #8f5afc 0%, #5197ff 100%)'
 
-  const flushAutoSaves = useWorkoutStore((s) => s.flushAutoSaves)
+  const flush = useWorkoutStore((s) => s.flush)
   const saving = useWorkoutStore((s) => s.saving)
   const lastSaveMode = useWorkoutStore((s) => s.lastSaveMode)
   const lastSavedAt = useWorkoutStore((s) => s.lastSavedAt)
@@ -359,7 +359,7 @@ const updateField = <K extends keyof FormState>(field: K, value: FormState[K]) =
     >
       <HeaderBar
         onBrowseCatalog={() => navigate('/catalog')}
-        onSave={() => flushAutoSaves('manual')}
+        onSave={() => flush('manual')}
         saving={saving as any}
         saveMode={lastSaveMode}
         lastSavedAt={lastSavedAt}

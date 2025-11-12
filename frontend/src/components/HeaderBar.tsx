@@ -84,6 +84,7 @@ export default function HeaderBar({
   const prevSavingRef = useRef<SavingState | undefined>('idle')
   const saveNotifIdRef = useRef<string | null>(null)
   const prevLastSavedAtRef = useRef<number | null>(null)
+  const firstNotifRunRef = useRef<boolean>(true)
 
   useEffect(() => {
     if (resetTimer.current) {
@@ -176,6 +177,13 @@ export default function HeaderBar({
 
   // Show notifications on save result transitions (supports stores that go saving -> saved or saving -> idle with lastSavedAt update)
   useEffect(() => {
+    // Skip showing any notifications on first mount to avoid spurious "Saved" when navigating
+    if (firstNotifRunRef.current) {
+      firstNotifRunRef.current = false
+      prevSavingRef.current = saving
+      prevLastSavedAtRef.current = lastSavedAt ?? null
+      return
+    }
     const isMobile = window.matchMedia('(max-width: 640px)').matches
     const baseNotificationProps = isMobile
       ? {

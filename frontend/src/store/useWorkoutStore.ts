@@ -86,6 +86,8 @@ export type WorkoutState = {
   lastSaveMode: SaveMode | null
   lastSavedAt: number | null
   autoSaveHandlers: Set<() => Promise<boolean>>
+  // Unified flush function: runs auto-save handlers then flushes opLog
+  flush: (mode?: SaveMode) => Promise<void>
   // Batched op-log
   opLog: Array<
     | { type: 'createExercise'; tempId: string; dayId: string; catalogId: string; position: number; comment?: string; displayName?: string }
@@ -417,31 +419,26 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
       handlers.delete(handler)
     }
   },
+  // Unified flush used by both auto interval and manual button
+  flush: async (mode: SaveMode = 'auto') => {
+    await get().flushAutoSaves(mode)
+  },
   flushAutoSaves: async (mode: SaveMode = 'manual') => {
     const handlers = Array.from(get().autoSaveHandlers)
     const setSaving = get().setSaving
-    // Always attempt to flush operation log first
-    const flushedOps = await get().flushOpLog()
-    if (handlers.length === 0) {
-      if (flushedOps) {
-      setSaving('saved', mode)
-      } else {
-        setSaving('idle', mode)
-      }
-      return
-    }
+    // For manual saves: run auto-save handlers first to enqueue edits, then flush the opLog
     setSaving('saving', mode)
     try {
-      let didSaveAny = flushedOps
+      let didSaveAny = false
+      // 1) Run all registered auto-save handlers to queue any pending edits (e.g., set updates)
       for (const fn of handlers) {
         const did = await fn()
         if (did) didSaveAny = true
       }
-      if (didSaveAny) {
-      setSaving('saved', mode)
-      } else {
-        setSaving('idle', mode)
-      }
+      // 2) Flush the op-log once after handlers have queued their ops
+      const flushedOps = await get().flushOpLog()
+      didSaveAny = didSaveAny || flushedOps
+      setSaving(didSaveAny ? 'saved' : 'idle', mode)
     } catch (err) {
       console.error(err)
       setSaving('error', mode)
@@ -798,17 +795,17 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
         })
         set({ day: { ...d, exercises: nextExercises } })
       }
-      // Clear op log on success
-      set({ opLog: [] })
-      // Persist server epoch for future batches
+      // Clear op log in memory and persistence on success
+      set({ opLog: [], hiddenIds: new Set() })
+      try {
+        const d3 = get().day
+        if (d3?.id) {
+          localStorage.removeItem(`oplog:v1:${d3.id}`)
+        }
+      } catch {}
+      // Persist server epoch for future batches (best-effort)
       if (typeof res.serverEpoch === 'number' && !Number.isNaN(res.serverEpoch)) {
         localStorage.setItem('saveEpoch', String(res.serverEpoch))
-        try {
-          const d3 = get().day
-          if (d3?.id) {
-            localStorage.removeItem(`oplog:v1:${d3.id}`)
-          }
-        } catch {}
       }
       return true
     } catch (e) {

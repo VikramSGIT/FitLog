@@ -23,7 +23,7 @@ export default function DayPicker() {
   const day = useWorkoutStore((s) => s.day)
   const setDay = useWorkoutStore((s) => s.setDay)
   const setDayLoading = useWorkoutStore((s) => s.setDayLoading)
-  const flushAutoSaves = useWorkoutStore((s) => s.flushAutoSaves)
+  const flush = useWorkoutStore((s) => s.flush)
   const saving = useWorkoutStore((s) => s.saving)
   const lastSaveMode = useWorkoutStore((s) => s.lastSaveMode)
   const lastSavedAt = useWorkoutStore((s) => s.lastSavedAt)
@@ -123,10 +123,10 @@ export default function DayPicker() {
 
   const onManualSave = useCallback(() => {
     if (saving === 'saving') return
-    flushAutoSaves('manual').catch(() => {
+    flush('manual').catch(() => {
       // flushAutoSaves sets saving state on error
     })
-  }, [flushAutoSaves, saving])
+  }, [flush, saving])
 
   useEffect(() => {
     const currentDate = day?.workoutDate ? toInputDate(day.workoutDate) : null

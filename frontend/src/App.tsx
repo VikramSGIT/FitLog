@@ -9,6 +9,7 @@ import { useWorkoutStore } from '@/store/useWorkoutStore'
 import { api, DayWithDetails } from '@/api/client'
 import { format } from 'date-fns'
 import { DEFAULT_SURFACES, ThemeSurfaces, useThemePreset } from './theme'
+import { AUTO_SAVE_DELAY_MS } from '@/config'
 import HeaderBar from '@/components/HeaderBar'
 
 const ExerciseList = lazy(() => import('@/components/ExerciseList'))
@@ -32,10 +33,12 @@ function Home() {
   const nav = useNavigate()
   const theme = useMantineTheme()
   const { preset, selectPreset, presets } = useThemePreset()
-  const flushAutoSaves = useWorkoutStore((s) => s.flushAutoSaves)
+  const flush = useWorkoutStore((s) => s.flush)
   const saving = useWorkoutStore((s) => s.saving)
   const lastSaveMode = useWorkoutStore((s) => s.lastSaveMode)
   const lastSavedAt = useWorkoutStore((s) => s.lastSavedAt)
+  const opCount = useWorkoutStore((s) => s.opLog.length)
+  const flushInFlight = useWorkoutStore((s) => s.flushInFlight)
 
   const surfaces = useMemo<ThemeSurfaces>(
     () => (theme.other?.surfaces as ThemeSurfaces) ?? DEFAULT_SURFACES,
@@ -56,6 +59,17 @@ function Home() {
       .catch(() => setAuthed(false))
       .finally(() => setCheckingSession(false))
   }, [])
+
+  // Background "cron-like" auto flush: periodically flush queue if there are pending ops
+  useEffect(() => {
+    if (opCount === 0) return
+    const id = window.setInterval(() => {
+      if (!flushInFlight && saving !== 'saving') {
+        void flush('auto')
+      }
+  }, AUTO_SAVE_DELAY_MS) // reuse AUTO_SAVE_DELAY_MS cadence
+    return () => window.clearInterval(id)
+  }, [opCount, flushInFlight, saving, flush])
 
   async function onLogin(e: React.FormEvent) {
     e.preventDefault()
@@ -215,7 +229,7 @@ function Home() {
         >
           <HeaderBar
             onBrowseCatalog={() => nav('/catalog')}
-            onSave={() => flushAutoSaves('manual')}
+            onSave={() => flush('manual')}
             saving={saving as any}
             saveMode={lastSaveMode}
             lastSavedAt={lastSavedAt}

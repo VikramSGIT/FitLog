@@ -22,7 +22,7 @@ export default function CatalogPage() {
     theme.colorScheme === 'light' ? surfaces.panel ?? '#ffffff' : surfaces.card ?? '#0b1020'
   const neutralBorderColor = surfaces.border ?? 'rgba(148, 163, 184, 0.35)'
   const accentGradient = (theme.other?.accentGradient as string) ?? 'linear-gradient(135deg, #8f5afc 0%, #5197ff 100%)'
-  const flushAutoSaves = useWorkoutStore((s) => s.flushAutoSaves)
+  const flush = useWorkoutStore((s) => s.flush)
   const saving = useWorkoutStore((s) => s.saving)
   const lastSaveMode = useWorkoutStore((s) => s.lastSaveMode)
   const lastSavedAt = useWorkoutStore((s) => s.lastSavedAt)
@@ -38,7 +38,7 @@ export default function CatalogPage() {
     >
       <HeaderBar
         onBrowseCatalog={() => navigate('/catalog')}
-        onSave={() => flushAutoSaves('manual')}
+        onSave={() => flush('manual')}
         saving={saving as any}
         saveMode={lastSaveMode}
         lastSavedAt={lastSavedAt}

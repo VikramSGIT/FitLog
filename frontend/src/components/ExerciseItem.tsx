@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useCallback, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { api, Exercise } from '@/api/client'
 import { useWorkoutStore } from '@/store/useWorkoutStore'
@@ -13,6 +14,7 @@ import { useMediaQuery } from '@mantine/hooks'
 const DEFAULT_REST_DURATION_SECONDS = 90
 
 export default function ExerciseItem({ exercise }: { exercise: Exercise }) {
+  const navigate = useNavigate()
   const { queueUpdateExercise, queueDeleteExercise, queueCreateSet } = useWorkoutStore()
   const isRestDay = useWorkoutStore((s) => s.day?.isRestDay ?? false)
   const dayLoading = useWorkoutStore((s) => s.dayLoading)
@@ -94,7 +96,22 @@ export default function ExerciseItem({ exercise }: { exercise: Exercise }) {
             )}
 
             <Stack gap={4} style={{ flex: 1, minWidth: 0 }}>
-              <Title order={4} style={{ margin: 0 }}>
+              <Title 
+                order={4} 
+                style={{ 
+                  margin: 0,
+                  cursor: exercise.catalogId ? 'pointer' : 'default'
+                }}
+                onClick={exercise.catalogId ? () => navigate(`/catalog/${exercise.catalogId}/details`) : undefined}
+                onTouchEnd={exercise.catalogId ? (e) => {
+                  const target = e.target as HTMLElement
+                  if (target.closest('button, [role="button"], a')) {
+                    return
+                  }
+                  e.preventDefault()
+                  navigate(`/catalog/${exercise.catalogId}/details`)
+                } : undefined}
+              >
                   {exercise.name}
                 </Title>
               <AnimatePresence initial={false}>

@@ -186,7 +186,7 @@ export default function ExerciseDetailsPage() {
               color={theme.primaryColor}
               radius="md"
               size="lg"
-              onClick={() => navigate('/catalog')}
+              onClick={() => navigate(-1)}
               aria-label="Back"
             >
               <IconArrowLeft size={18} />
@@ -447,14 +447,14 @@ export default function ExerciseDetailsPage() {
             <Stack gap="lg">
               {!isMobile && (
                 <Group justify="space-between" align="center">
-                  <Button
-                    variant="subtle"
-                    leftSection={<IconArrowLeft size={16} />}
-                    onClick={() => navigate('/catalog')}
-                    style={{ alignSelf: 'flex-start' }}
-                  >
-                    Back to catalog
-                  </Button>
+                <Button
+                  variant="subtle"
+                  leftSection={<IconArrowLeft size={16} />}
+                  onClick={() => navigate(-1)}
+                  style={{ alignSelf: 'flex-start' }}
+                >
+                  Back
+                </Button>
                 </Group>
               )}
 

@@ -105,6 +105,7 @@ func main() {
 				r.Get("/catalog/entries/{id}", catalogHandler.GetEntry)
 				r.Put("/catalog/entries/{id}", catalogHandler.UpdateEntry)
 				r.Delete("/catalog/entries/{id}", catalogHandler.DeleteEntry)
+				r.Get("/catalog/entries/{id}/stats", catalogHandler.GetExerciseStats)
 				// Catalog images
 				r.Get("/catalog/entries/{id}/image", catalogHandler.GetImage)
 

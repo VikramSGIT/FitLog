@@ -501,7 +501,7 @@ const updateField = <K extends keyof FormState>(field: K, value: FormState[K]) =
                       />
                     ) : form.hasImage && catalogId && imageUrl ? (
                       <img
-                        src={`${imageUrl}?_=${Date.now()}`}
+                        src={imageUrl}
                         alt="Existing exercise image"
                         style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
                       />
@@ -818,7 +818,7 @@ const updateField = <K extends keyof FormState>(field: K, value: FormState[K]) =
                       />
                     ) : form.hasImage && catalogId && imageUrl ? (
                       <img
-                        src={`${imageUrl}?_=${Date.now()}`}
+                        src={imageUrl}
                         alt="Existing exercise image"
                         style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
                       />

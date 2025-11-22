@@ -240,4 +240,50 @@ func (h *CatalogHandler) DeleteEntry(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (h *CatalogHandler) GetExerciseStats(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	id := strings.TrimSpace(chi.URLParam(r, "id"))
+	if id == "" {
+		http.Error(w, "id is required", http.StatusBadRequest)
+		return
+	}
+
+	// Parse pagination parameters
+	limit := 5 // Default to 5 days
+	offset := 0
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+	if offsetStr := r.URL.Query().Get("offset"); offsetStr != "" {
+		if parsed, err := strconv.Atoi(offsetStr); err == nil && parsed >= 0 {
+			offset = parsed
+		}
+	}
+
+	stats, hasMore, err := h.Catalog.GetExerciseStats(r.Context(), id, userID, limit, offset)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.NotFound(w, r)
+			return
+		}
+		log.Printf("catalog get exercise stats error: %v", err)
+		http.Error(w, "server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Include hasMore in response
+	response := map[string]interface{}{
+		"highestWeightKg": stats.HighestWeightKg,
+		"history":         stats.History,
+		"hasMore":        hasMore,
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
 

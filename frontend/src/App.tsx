@@ -16,6 +16,7 @@ const ExerciseList = lazy(() => import('@/components/ExerciseList'))
 const CatalogBrowser = lazy(() => import('@/components/CatalogBrowser'))
 const CatalogPage = lazy(() => import('./pages/CatalogPage'))
 const CatalogCreatePage = lazy(() => import('./pages/CatalogCreatePage'))
+const ExerciseDetailsPage = lazy(() => import('./pages/ExerciseDetailsPage'))
 
 const MotionPaper = motion.create(Paper)
 const MotionBox = motion.create(Box)
@@ -347,6 +348,7 @@ export default function App() {
         <Route path="/catalog" element={<CatalogPage />} />
         <Route path="/catalog/new" element={<CatalogCreatePage />} />
         <Route path="/catalog/:catalogId/edit" element={<CatalogCreatePage />} />
+        <Route path="/catalog/:id/details" element={<ExerciseDetailsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       </Suspense>

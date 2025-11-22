@@ -113,6 +113,23 @@ export type CatalogRecord = {
   updatedAt?: string;
 };
 
+export type ExerciseStats = {
+  highestWeightKg: number;
+  history: ExerciseHistoryItem[];
+  hasMore?: boolean;
+};
+
+export type ExerciseHistoryItem = {
+  workoutDate: string;
+  sets: SetHistory[];
+};
+
+export type SetHistory = {
+  reps: number;
+  weightKg: number;
+  isWarmup: boolean;
+};
+
 export const api = {
   // Catalog search
   searchCatalog: (params: {
@@ -269,6 +286,13 @@ export const api = {
     }
   },
   deleteCatalogEntry: (id: string) => request<void>(`/api/catalog/entries/${id}`, { method: 'DELETE' }),
+  getExerciseStats: (id: string, limit?: number, offset?: number) => {
+    const params = new URLSearchParams()
+    if (limit !== undefined) params.append('limit', limit.toString())
+    if (offset !== undefined) params.append('offset', offset.toString())
+    const query = params.toString()
+    return request<ExerciseStats>(`/api/catalog/entries/${id}/stats${query ? `?${query}` : ''}`)
+  },
 
   // Batch save
   saveBatch: (

@@ -176,10 +176,31 @@ export default function CatalogBrowser({ embedded = false, onClose, headerAddon 
             withBorder
             radius={isMobile ? 'md' : 'lg'}
             padding={isMobile ? 'sm' : 'lg'}
+            onClick={embedded ? undefined : (e) => {
+              // Only navigate if click is not on an interactive element
+              const target = e.target as HTMLElement
+              if (target.closest('button, [role="button"], a')) {
+                return
+              }
+              navigate(`/catalog/${it.id}/details`)
+            }}
+            onTouchEnd={embedded ? undefined : (e) => {
+              // Only navigate if touch is not on an interactive element
+              const target = e.target as HTMLElement
+              if (target.closest('button, [role="button"], a')) {
+                return
+              }
+              e.preventDefault()
+              navigate(`/catalog/${it.id}/details`)
+            }}
             style={{
               backdropFilter: 'none',
               background: surfaces.card,
-              borderColor: surfaces.border
+              borderColor: surfaces.border,
+              cursor: embedded ? 'default' : 'pointer',
+              pointerEvents: 'auto',
+              userSelect: 'none',
+              WebkitUserSelect: 'none'
             }}
           >
             <div
@@ -191,13 +212,13 @@ export default function CatalogBrowser({ embedded = false, onClose, headerAddon 
                 width: '100%'
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, pointerEvents: 'none' }}>
                 {it.hasImage && !imageErrors.has(it.id) && (
-                  <div style={{ width: 56, height: 56, borderRadius: 12, overflow: 'hidden', border: `1px solid ${surfaces.border}`, flexShrink: 0, background: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <div style={{ width: 56, height: 56, borderRadius: 12, overflow: 'hidden', border: `1px solid ${surfaces.border}`, flexShrink: 0, background: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
                     <img
                       src={`${import.meta.env.VITE_API_BASE_URL || ''}/api/catalog/entries/${it.id}/image`}
                       alt={it.name}
-                      style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+                      style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', pointerEvents: 'none' }}
                       onError={() => {
                         setImageErrors((prev) => new Set(prev).add(it.id))
                       }}
@@ -205,42 +226,51 @@ export default function CatalogBrowser({ embedded = false, onClose, headerAddon 
                   </div>
                 )}
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 2 : 4, minWidth: 0 }}>
-                  <Text fw={600} style={{ whiteSpace: 'normal', overflow: 'visible', textOverflow: 'clip', lineHeight: 1.2 }}>
+                <div
+                  style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 2 : 4, minWidth: 0, flex: 1, pointerEvents: 'none' }}
+                >
+                  <Text fw={600} style={{ whiteSpace: 'normal', overflow: 'visible', textOverflow: 'clip', lineHeight: 1.2, pointerEvents: 'none' }}>
                     {it.name}
                   </Text>
-                  <Group gap={6} wrap="wrap" style={{ minWidth: 0, overflow: 'hidden' }}>
+                  <Group 
+                    gap={6} 
+                    wrap="wrap" 
+                    style={{ minWidth: 0, overflow: 'hidden', pointerEvents: 'none' }}
+                  >
                     {it.type && (
-                      <Badge size={isMobile ? 'xs' : 'sm'} color={theme.primaryColor} variant="light">
+                      <Badge size={isMobile ? 'xs' : 'sm'} color={theme.primaryColor} variant="light" style={{ pointerEvents: 'none' }}>
                         {it.type}
                       </Badge>
                     )}
                     {it.bodyPart && (
-                      <Badge size={isMobile ? 'xs' : 'sm'} color="blue" variant="light">
+                      <Badge size={isMobile ? 'xs' : 'sm'} color="blue" variant="light" style={{ pointerEvents: 'none' }}>
                         {it.bodyPart}
                       </Badge>
                     )}
                     {it.equipment && (
-                      <Badge size={isMobile ? 'xs' : 'sm'} color="grape" variant="light">
+                      <Badge size={isMobile ? 'xs' : 'sm'} color="grape" variant="light" style={{ pointerEvents: 'none' }}>
                         {it.equipment}
                       </Badge>
                     )}
                     {it.level && (
-                      <Badge size={isMobile ? 'xs' : 'sm'} color="cyan" variant="light">
+                      <Badge size={isMobile ? 'xs' : 'sm'} color="cyan" variant="light" style={{ pointerEvents: 'none' }}>
                         {it.level}
                       </Badge>
                     )}
                   </Group>
                 </div>
               </div>
-                  <Group gap={isMobile ? 8 : 'sm'} justify="flex-end">
+                  <Group gap={isMobile ? 8 : 'sm'} justify="flex-end" onClick={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()}>
                     {isMobile ? (
                       <>
                         <ActionIcon
                           size="lg"
                           radius="md"
                           aria-label="Edit catalog exercise"
-                          onClick={() => handleEdit(it.id)}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleEdit(it.id)
+                          }}
                           style={{
                             background: theme.colorScheme === 'light' ? '#ffffff' : surfaces.card,
                             border: `1px solid ${surfaces.border}`,
@@ -253,7 +283,10 @@ export default function CatalogBrowser({ embedded = false, onClose, headerAddon 
                           size="lg"
                           radius="md"
                           aria-label="Add to day"
-                          onClick={() => addToDay(it)}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            addToDay(it)
+                          }}
                           disabled={!canAddToDay}
                           style={{
                             backgroundImage: accentGradient,
@@ -269,7 +302,10 @@ export default function CatalogBrowser({ embedded = false, onClose, headerAddon 
                         <Button
                           variant="outline"
                           leftSection={<IconPencil size={18} />}
-                          onClick={() => handleEdit(it.id)}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleEdit(it.id)
+                          }}
                           style={{
                             background: surfaces.card,
                             border: `1px solid ${surfaces.border}`,
@@ -280,7 +316,10 @@ export default function CatalogBrowser({ embedded = false, onClose, headerAddon 
                         </Button>
                         <Button
                           leftSection={<IconPlus size={18} />}
-                          onClick={() => addToDay(it)}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            addToDay(it)
+                          }}
                           disabled={!canAddToDay}
                           style={{
                             backgroundImage: accentGradient,

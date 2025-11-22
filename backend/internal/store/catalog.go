@@ -301,24 +301,22 @@ where ec.id = $1
 		record.Description = &description.String
 	}
 	if multiplier.Valid {
-		val := multiplier.Float64
-		record.Multiplier = &val
+		record.Multiplier = &multiplier.Float64
 	}
 	if baseWeight.Valid {
-		val := baseWeight.Float64
-		record.BaseWeightKg = &val
-	}
-	if err := json.Unmarshal(linksJSON, &record.Links); err != nil {
-		return nil, err
+		record.BaseWeightKg = &baseWeight.Float64
 	}
 	if err := json.Unmarshal(primaryJSON, &record.PrimaryMuscles); err != nil {
 		return nil, err
 	}
-	if err := json.Unmarshal(secondaryJSON, &record.SecondaryMuscles); err != nil {
+	if err := json.Unmarshal(linksJSON, &record.Links); err != nil {
 		return nil, err
 	}
 	if record.Links == nil {
 		record.Links = []string{}
+	}
+	if err := json.Unmarshal(secondaryJSON, &record.SecondaryMuscles); err != nil {
+		return nil, err
 	}
 	if record.PrimaryMuscles == nil {
 		record.PrimaryMuscles = []string{}
@@ -356,7 +354,6 @@ func updateCatalogEntry(ctx context.Context, tx *sqlx.Tx, id string, entry Catal
 		return fmt.Errorf("catalog name is required")
 	}
 	slug := slugify(name)
-
 	var (
 		description sql.NullString
 		multiplier  sql.NullFloat64
@@ -393,6 +390,8 @@ func updateCatalogEntry(ctx context.Context, tx *sqlx.Tx, id string, entry Catal
 	if entry.BaseWeightKg != nil {
 		baseWeight = sql.NullFloat64{Float64: *entry.BaseWeightKg, Valid: true}
 	}
+	secondaries := sanitizeList(entry.SecondaryMuscles)
+
 	for _, ref := range []struct {
 		value string
 		sql   string
@@ -406,14 +405,13 @@ func updateCatalogEntry(ctx context.Context, tx *sqlx.Tx, id string, entry Catal
 			return err
 		}
 	}
-	for _, m := range primaryMuscles {
-		if _, err := tx.ExecContext(ctx, `insert into muscle_types(name) values ($1) on conflict do nothing`, m); err != nil {
+	for _, muscle := range primaryMuscles {
+		if _, err := tx.ExecContext(ctx, `insert into muscle_types(name) values ($1) on conflict do nothing`, muscle); err != nil {
 			return err
 		}
 	}
-	secondary := sanitizeList(entry.SecondaryMuscles)
-	for _, m := range secondary {
-		if _, err := tx.ExecContext(ctx, `insert into muscle_types(name) values ($1) on conflict do nothing`, m); err != nil {
+	for _, muscle := range secondaries {
+		if _, err := tx.ExecContext(ctx, `insert into muscle_types(name) values ($1) on conflict do nothing`, muscle); err != nil {
 			return err
 		}
 	}
@@ -464,7 +462,7 @@ returning id
 	if _, err := tx.ExecContext(ctx, `delete from exercise_catalog_secondary_muscles where catalog_id = $1`, id); err != nil {
 		return err
 	}
-	for _, muscle := range secondary {
+	for _, muscle := range secondaries {
 		if _, err := tx.ExecContext(ctx, `
 			insert into exercise_catalog_secondary_muscles (catalog_id, muscle)
 			values ($1, $2)
@@ -749,4 +747,154 @@ where ec.slug = $1
 	return &record, nil
 }
 
+type ExerciseStats struct {
+	HighestWeightKg float64              `json:"highestWeightKg"`
+	History         []ExerciseHistoryItem `json:"history"`
+}
 
+type ExerciseHistoryItem struct {
+	WorkoutDate string       `json:"workoutDate"`
+	Sets        []SetHistory `json:"sets"`
+}
+
+type SetHistory struct {
+	Reps     int     `json:"reps"`
+	WeightKg float64 `json:"weightKg"`
+	IsWarmup bool    `json:"isWarmup"`
+}
+
+func (s *Catalog) GetExerciseStats(ctx context.Context, catalogID string, userID string, limit, offset int) (*ExerciseStats, bool, error) {
+	trimmed := strings.TrimSpace(catalogID)
+	if trimmed == "" {
+		return nil, false, fmt.Errorf("catalog id is required")
+	}
+	if strings.TrimSpace(userID) == "" {
+		return nil, false, fmt.Errorf("user id is required")
+	}
+
+	// Get highest weight
+	const highestWeightQ = `
+	select max(s.weight_kg) as highest_weight
+	from sets s
+	join exercises e on e.id = s.exercise_id
+	where e.catalog_id = $1 and s.user_id = $2 and s.is_warmup = false
+	`
+	var highestWeight sql.NullFloat64
+	if err := s.db.QueryRowxContext(ctx, highestWeightQ, trimmed, userID).Scan(&highestWeight); err != nil {
+		return nil, false, err
+	}
+
+	// Get distinct workout dates first, ordered by date descending
+	const datesQ = `
+	select distinct d.workout_date
+	from sets s
+	join exercises e on e.id = s.exercise_id
+	join workout_days d on d.id = e.day_id
+	where e.catalog_id = $1 and s.user_id = $2
+	order by d.workout_date desc
+	limit $3 offset $4
+	`
+	dateRows, err := s.db.QueryxContext(ctx, datesQ, trimmed, userID, limit, offset)
+	if err != nil {
+		return nil, false, err
+	}
+	defer dateRows.Close()
+
+	var dates []time.Time
+	for dateRows.Next() {
+		var workoutDate time.Time
+		if err := dateRows.Scan(&workoutDate); err != nil {
+			return nil, false, err
+		}
+		dates = append(dates, workoutDate)
+	}
+	if err := dateRows.Err(); err != nil {
+		return nil, false, err
+	}
+
+	// Check if there are more results
+	hasMore := len(dates) == limit
+
+	// Get exercise history for these dates
+	if len(dates) == 0 {
+		stats := &ExerciseStats{
+			HighestWeightKg: 0,
+			History:         []ExerciseHistoryItem{},
+		}
+		if highestWeight.Valid {
+			stats.HighestWeightKg = highestWeight.Float64
+		}
+		return stats, false, nil
+	}
+
+	// Build query with date filter using IN clause
+	datePlaceholders := make([]string, len(dates))
+	args := make([]interface{}, len(dates)+2)
+	args[0] = trimmed
+	args[1] = userID
+	for i, date := range dates {
+		datePlaceholders[i] = fmt.Sprintf("$%d::date", i+3)
+		args[i+2] = date
+	}
+
+	historyQ := fmt.Sprintf(`
+	select 
+		d.workout_date,
+		s.reps,
+		s.weight_kg,
+		s.is_warmup
+	from sets s
+	join exercises e on e.id = s.exercise_id
+	join workout_days d on d.id = e.day_id
+	where e.catalog_id = $1 and s.user_id = $2 and d.workout_date in (%s)
+	order by d.workout_date desc, s.position asc
+	`, strings.Join(datePlaceholders, ","))
+
+	rows, err := s.db.QueryxContext(ctx, historyQ, args...)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+
+	historyMap := make(map[string][]SetHistory)
+	for rows.Next() {
+		var workoutDate time.Time
+		var reps int
+		var weightKg float64
+		var isWarmup bool
+		if err := rows.Scan(&workoutDate, &reps, &weightKg, &isWarmup); err != nil {
+			return nil, false, err
+		}
+		dateStr := workoutDate.Format("2006-01-02")
+		historyMap[dateStr] = append(historyMap[dateStr], SetHistory{
+			Reps:     reps,
+			WeightKg: weightKg,
+			IsWarmup: isWarmup,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+
+	// Convert map to sorted slice (already sorted by date descending from query)
+	history := make([]ExerciseHistoryItem, 0, len(historyMap))
+	for _, date := range dates {
+		dateStr := date.Format("2006-01-02")
+		if sets, ok := historyMap[dateStr]; ok {
+			history = append(history, ExerciseHistoryItem{
+				WorkoutDate: dateStr,
+				Sets:        sets,
+			})
+		}
+	}
+
+	stats := &ExerciseStats{
+		HighestWeightKg: 0,
+		History:         history,
+	}
+	if highestWeight.Valid {
+		stats.HighestWeightKg = highestWeight.Float64
+	}
+
+	return stats, hasMore, nil
+}

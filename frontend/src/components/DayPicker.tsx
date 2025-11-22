@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties } from 're
 import { api } from '@/api/client'
 import { useWorkoutStore } from '@/store/useWorkoutStore'
 import { format } from 'date-fns'
-import { Button, Group, Loader, Stack, Text, Title, Tooltip, useMantineTheme } from '@mantine/core'
+import { Button, Group, Loader, Modal, Stack, Text, Title, Tooltip, useMantineTheme } from '@mantine/core'
 import { DateInput } from '@mantine/dates'
 import dayjs from 'dayjs'
 import { IconCalendar, IconMoonStars, IconSunHigh } from '@tabler/icons-react'
@@ -31,6 +31,7 @@ export default function DayPicker() {
   const [selectedDate, setSelectedDate] = useState<string>(() => toInputDate(day?.workoutDate))
   const loadingRef = useRef<string | null>(null)
   const [restUpdating, setRestUpdating] = useState(false)
+  const [restDayModalOpen, setRestDayModalOpen] = useState(false)
   const theme = useMantineTheme()
   const { preset } = useThemePreset()
   const isLight = preset?.colorScheme === 'light'
@@ -102,10 +103,26 @@ export default function DayPicker() {
     if (!day.isRestDay) {
       const hasExercises = Array.isArray(day.exercises) && day.exercises.length > 0
       if (hasExercises) {
-        alert('Remove all exercises from this day before marking it as a rest day.')
+        setRestDayModalOpen(true)
         return
       }
     }
+    setRestUpdating(true)
+    setDayLoading(true)
+    try {
+      const updated = await api.updateDay(day.id, { isRestDay: !day.isRestDay })
+      setDay(updated)
+    } catch (err) {
+      console.error('Failed to toggle rest day', err)
+    } finally {
+      setDayLoading(false)
+      setRestUpdating(false)
+    }
+  }, [day, dayLoading, setDay, setDayLoading])
+
+  const confirmRestDay = useCallback(async () => {
+    if (!day || dayLoading) return
+    setRestDayModalOpen(false)
     setRestUpdating(true)
     setDayLoading(true)
     try {
@@ -243,6 +260,28 @@ export default function DayPicker() {
           </Group>
       )}
       </Stack>
+
+      <Modal
+        opened={restDayModalOpen}
+        onClose={() => setRestDayModalOpen(false)}
+        title="Switch to rest day"
+        radius="md"
+        centered
+      >
+        <Stack gap="md">
+          <Text>
+            Please remove all exercises from this day before marking it as a rest day.
+          </Text>
+          <Group justify="flex-end">
+            <Button
+              onClick={() => setRestDayModalOpen(false)}
+              disabled={restUpdating || dayLoading}
+            >
+              OK
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
     </Stack>
   )
 }

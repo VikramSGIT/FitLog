@@ -58,6 +58,7 @@ type CatalogItem struct {
 	Multiplier       float64  `db:"multiplier" json:"multiplier"`
 	BaseWeightKg     float64  `db:"base_weight_kg" json:"baseWeightKg"`
 	SecondaryMuscles []string `json:"secondaryMuscles,omitempty"`
+	HasImage         bool     `db:"has_image" json:"hasImage"`
 }
 
 type CatalogSearchResult struct {
@@ -140,7 +141,8 @@ SELECT
     SELECT array_to_json(array_agg(sm.muscle ORDER BY sm.muscle))
     FROM exercise_catalog_secondary_muscles sm
     WHERE sm.catalog_id = exercise_catalog.id
-  ), '[]'::json) AS secondary_muscles
+  ), '[]'::json) AS secondary_muscles,
+  CASE WHEN image_data IS NOT NULL THEN TRUE ELSE FALSE END AS has_image
 FROM exercise_catalog
 ` + cond + `
 ORDER BY ` + sort + `
@@ -168,6 +170,7 @@ LIMIT $` + fmt.Sprint(len(args)+1) + ` OFFSET $` + fmt.Sprint(len(args)+2)
 			&it.Multiplier,
 			&it.BaseWeightKg,
 			&secondaryJSON,
+			&it.HasImage,
 		); err != nil {
 			return CatalogSearchResult{}, err
 		}

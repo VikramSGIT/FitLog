@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"io"
 	"log"
 	"net/http"
 	"strconv"
@@ -100,8 +101,23 @@ func (h *CatalogHandler) UpdateEntry(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "id is required", http.StatusBadRequest)
 		return
 	}
+
+	// Accept multipart/form-data so we can update the exercise and image together.
+	// The frontend sends a "metadata" field containing the JSON catalog payload
+	// and an optional "file" field for the PNG/APNG image.
+	if err := r.ParseMultipartForm(10 << 20); err != nil { // 10MB
+		http.Error(w, "invalid form", http.StatusBadRequest)
+		return
+	}
+
+	metaJSON := strings.TrimSpace(r.FormValue("metadata"))
+	if metaJSON == "" {
+		http.Error(w, "metadata is required", http.StatusBadRequest)
+		return
+	}
+
 	var payload catalogPayload
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+	if err := json.Unmarshal([]byte(metaJSON), &payload); err != nil {
 		http.Error(w, "invalid json", http.StatusBadRequest)
 		return
 	}
@@ -110,7 +126,45 @@ func (h *CatalogHandler) UpdateEntry(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := h.Catalog.UpdateCatalogEntry(r.Context(), id, entry); err != nil {
+
+	removeImage := strings.EqualFold(strings.TrimSpace(r.FormValue("removeImage")), "true")
+
+	var (
+		imageData     []byte
+		imageMimeType string
+	)
+
+	file, header, err := r.FormFile("file")
+	if err == nil {
+		defer file.Close()
+		data, readErr := io.ReadAll(file)
+		if readErr != nil {
+			http.Error(w, "invalid file", http.StatusBadRequest)
+			return
+		}
+		if len(data) == 0 {
+			http.Error(w, "empty file", http.StatusBadRequest)
+			return
+		}
+		mimeType := header.Header.Get("Content-Type")
+		if mimeType == "" {
+			mimeType = http.DetectContentType(data)
+		}
+		switch mimeType {
+		case "image/apng", "image/png":
+			// ok
+		default:
+			http.Error(w, "only PNG/APNG images are supported", http.StatusBadRequest)
+			return
+		}
+		imageData = data
+		imageMimeType = mimeType
+	} else if err != http.ErrMissingFile {
+		http.Error(w, "invalid file", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.Catalog.UpdateCatalogEntry(r.Context(), id, entry, imageData, imageMimeType, removeImage); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			http.NotFound(w, r)
 			return
@@ -131,3 +185,59 @@ func (h *CatalogHandler) UpdateEntry(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, rec)
 }
+
+func (h *CatalogHandler) GetImage(w http.ResponseWriter, r *http.Request) {
+	if _, ok := middleware.UserIDFromContext(r.Context()); !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	id := strings.TrimSpace(chi.URLParam(r, "id"))
+	if id == "" {
+		http.Error(w, "id is required", http.StatusBadRequest)
+		return
+	}
+	data, mimeType, err := h.Catalog.GetCatalogImage(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.NotFound(w, r)
+			return
+		}
+		log.Printf("catalog get image error: %v", err)
+		http.Error(w, "server error", http.StatusInternalServerError)
+		return
+	}
+	if len(data) == 0 {
+		http.NotFound(w, r)
+		return
+	}
+	if mimeType == "" {
+		mimeType = http.DetectContentType(data)
+	}
+	w.Header().Set("Content-Type", mimeType)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
+}
+
+func (h *CatalogHandler) DeleteEntry(w http.ResponseWriter, r *http.Request) {
+	if _, ok := middleware.UserIDFromContext(r.Context()); !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	id := strings.TrimSpace(chi.URLParam(r, "id"))
+	if id == "" {
+		http.Error(w, "id is required", http.StatusBadRequest)
+		return
+	}
+	if err := h.Catalog.DeleteCatalogEntry(r.Context(), id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.NotFound(w, r)
+			return
+		}
+		log.Printf("catalog delete entry error: %v", err)
+		http.Error(w, "server error", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+

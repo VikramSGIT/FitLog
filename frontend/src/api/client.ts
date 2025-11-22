@@ -77,6 +77,7 @@ export type CatalogItem = {
   multiplier: number;
   baseWeightKg: number;
   secondaryMuscles?: string[];
+  hasImage?: boolean;
 };
 
 export type CatalogEntryInput = {
@@ -107,6 +108,7 @@ export type CatalogRecord = {
   links: string[];
   multiplier: number | null;
   baseWeightKg: number | null;
+  hasImage?: boolean;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -206,16 +208,67 @@ export const api = {
     ),
   // Admin catalog management
   getCatalogEntry: (id: string) => request<CatalogRecord>(`/api/catalog/entries/${id}`),
-  updateCatalogEntry: (id: string, data: CatalogEntryInput) =>
-    request<CatalogRecord>(`/api/catalog/entries/${id}`, {
+  updateCatalogEntry: async (id: string, data: CatalogEntryInput, imageFile?: File | null, removeImage?: boolean) => {
+    const formData = new FormData()
+    formData.append('metadata', JSON.stringify(data))
+    if (imageFile) {
+      formData.append('file', imageFile)
+    }
+    if (removeImage) {
+      formData.append('removeImage', 'true')
+    }
+    const res = await fetch(`${API_BASE}/api/catalog/entries/${id}`, {
       method: 'PUT',
-      body: JSON.stringify(data)
-    }),
-  createCatalogEntry: (data: CatalogEntryInput) =>
-    request<{ upserted: number }>('/api/catalog/admin/import', {
-      method: 'POST',
-      body: JSON.stringify([data])
-    }),
+      credentials: 'include',
+      body: formData
+    })
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      let message = text
+      try {
+        const json = JSON.parse(text)
+        message = json.error || json.message || text
+      } catch {
+        // Not JSON, use text as-is
+      }
+      throw new Error(message || `HTTP ${res.status}`)
+    }
+    const json = await res.json()
+    return json as CatalogRecord
+  },
+  createCatalogEntry: async (data: CatalogEntryInput, imageFile?: File | null) => {
+    if (imageFile) {
+      // Use multipart/form-data when image is present
+      const formData = new FormData()
+      formData.append('metadata', JSON.stringify(data))
+      formData.append('file', imageFile)
+      const res = await fetch(`${API_BASE}/api/catalog/admin/import`, {
+        method: 'POST',
+        credentials: 'include',
+        body: formData
+      })
+      if (!res.ok) {
+        const text = await res.text().catch(() => '')
+        let message = text
+        try {
+          const json = JSON.parse(text)
+          message = json.error || json.message || text
+        } catch {
+          // Not JSON, use text as-is
+        }
+        throw new Error(message || `HTTP ${res.status}`)
+      }
+      const json = await res.json()
+      return json as { upserted: number; entry?: CatalogRecord }
+    } else {
+      // Use JSON when no image
+      return request<{ upserted: number }>('/api/catalog/admin/import', {
+        method: 'POST',
+        body: JSON.stringify([data])
+      })
+    }
+  },
+  deleteCatalogEntry: (id: string) => request<void>(`/api/catalog/entries/${id}`, { method: 'DELETE' }),
 
   // Batch save
   saveBatch: (

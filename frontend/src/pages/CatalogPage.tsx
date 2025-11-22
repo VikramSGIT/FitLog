@@ -31,11 +31,16 @@ export default function CatalogPage() {
     <Box
       style={{
         minHeight: '100vh',
-        background: surfaces.app,
+        height: isMobile ? '100vh' : undefined,
+        background: isMobile ? surfaces.panel : surfaces.app,
         color: baseTextColor,
-        paddingBottom: '4rem'
+        paddingBottom: isMobile ? 0 : '4rem',
+        display: isMobile ? 'flex' : undefined,
+        flexDirection: isMobile ? 'column' : undefined,
+        overflow: isMobile ? 'hidden' : undefined
       }}
     >
+      {!isMobile && (
       <HeaderBar
         onBrowseCatalog={() => navigate('/catalog')}
         onSave={() => flush('manual')}
@@ -50,6 +55,30 @@ export default function CatalogPage() {
         }}
         userLabel="Account"
       />
+      )}
+      {isMobile ? (
+        <CatalogBrowser
+          headerAddon={
+            <Tooltip label="Add catalog exercise" position="left" withArrow>
+              <ActionIcon
+                size="lg"
+                radius="md"
+                onClick={() => navigate('/catalog/new')}
+                style={{
+                  background: neutralButtonBackground,
+                  border: `1px solid ${neutralBorderColor}`,
+                  color: baseTextColor,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <IconPlus size={20} />
+              </ActionIcon>
+            </Tooltip>
+          }
+        />
+      ) : (
       <Container size="lg" py="xl">
         <Stack gap="xl">
           <Paper
@@ -73,25 +102,6 @@ export default function CatalogPage() {
               </Button>
               <CatalogBrowser
                 headerAddon={
-                  isMobile ? (
-                    <Tooltip label="Add catalog exercise" position="left" withArrow>
-                      <ActionIcon
-                        size="lg"
-                        radius="md"
-                        onClick={() => navigate('/catalog/new')}
-                        style={{
-                          background: neutralButtonBackground,
-                          border: `1px solid ${neutralBorderColor}`,
-                          color: baseTextColor,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                        }}
-                      >
-                        <IconPlus size={20} />
-                      </ActionIcon>
-                    </Tooltip>
-                  ) : (
                     <Button
                       size="md"
                       radius="md"
@@ -111,13 +121,13 @@ export default function CatalogPage() {
                     >
                       Add catalog exercise
                     </Button>
-                  )
                 }
               />
             </Stack>
           </Paper>
         </Stack>
       </Container>
+      )}
     </Box>
   )
 }

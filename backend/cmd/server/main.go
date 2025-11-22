@@ -104,6 +104,9 @@ func main() {
 				r.Get("/catalog/facets", catalogHandler.Facets)
 				r.Get("/catalog/entries/{id}", catalogHandler.GetEntry)
 				r.Put("/catalog/entries/{id}", catalogHandler.UpdateEntry)
+				r.Delete("/catalog/entries/{id}", catalogHandler.DeleteEntry)
+				// Catalog images
+				r.Get("/catalog/entries/{id}/image", catalogHandler.GetImage)
 
 				// Admin-only routes
 				r.Post("/catalog/admin/import", adminHandler.UpsertCatalogJSON)

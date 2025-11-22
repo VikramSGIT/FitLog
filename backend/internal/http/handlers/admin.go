@@ -122,21 +122,79 @@ func (h *AdminHandler) UpsertCatalogJSON(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		http.Error(w, "invalid body", http.StatusBadRequest)
-		return
-	}
-	defer r.Body.Close()
+	contentType := r.Header.Get("Content-Type")
+	isMultipart := strings.HasPrefix(contentType, "multipart/form-data")
 
-	var payloads []catalogPayload
-	if err := json.Unmarshal(body, &payloads); err != nil {
+	var (
+		payloads    []catalogPayload
+		imageData   []byte
+		imageMimeType string
+	)
+
+	if isMultipart {
+		// Handle multipart/form-data (single entry with optional image)
+		if err := r.ParseMultipartForm(10 << 20); err != nil { // 10MB
+			http.Error(w, "invalid form", http.StatusBadRequest)
+			return
+		}
+
+		metaJSON := strings.TrimSpace(r.FormValue("metadata"))
+		if metaJSON == "" {
+			http.Error(w, "metadata is required", http.StatusBadRequest)
+			return
+		}
+
 		var single catalogPayload
-		if errSingle := json.Unmarshal(body, &single); errSingle != nil {
+		if err := json.Unmarshal([]byte(metaJSON), &single); err != nil {
 			http.Error(w, "invalid json", http.StatusBadRequest)
 			return
 		}
 		payloads = append(payloads, single)
+
+		// Handle image file if present
+		file, header, err := r.FormFile("file")
+		if err == nil {
+			defer file.Close()
+			data, readErr := io.ReadAll(file)
+			if readErr != nil {
+				http.Error(w, "invalid file", http.StatusBadRequest)
+				return
+			}
+			if len(data) > 0 {
+				mimeType := header.Header.Get("Content-Type")
+				if mimeType == "" {
+					mimeType = http.DetectContentType(data)
+				}
+				switch mimeType {
+				case "image/apng", "image/png":
+					imageData = data
+					imageMimeType = mimeType
+				default:
+					http.Error(w, "only PNG/APNG images are supported", http.StatusBadRequest)
+					return
+				}
+			}
+		} else if err != http.ErrMissingFile {
+			http.Error(w, "invalid file", http.StatusBadRequest)
+			return
+		}
+	} else {
+		// Handle JSON (original behavior for bulk imports)
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "invalid body", http.StatusBadRequest)
+			return
+		}
+		defer r.Body.Close()
+
+		if err := json.Unmarshal(body, &payloads); err != nil {
+			var single catalogPayload
+			if errSingle := json.Unmarshal(body, &single); errSingle != nil {
+				http.Error(w, "invalid json", http.StatusBadRequest)
+				return
+			}
+			payloads = append(payloads, single)
+		}
 	}
 
 	if len(payloads) == 0 {
@@ -152,6 +210,17 @@ func (h *AdminHandler) UpsertCatalogJSON(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		entries = append(entries, entry)
+	}
+
+	// If we have image data and a single entry, use CreateCatalogEntryWithImage
+	if len(imageData) > 0 && len(entries) == 1 {
+		rec, err := h.Catalog.CreateCatalogEntryWithImage(r.Context(), entries[0], imageData, imageMimeType)
+		if err != nil {
+			http.Error(w, "server error", http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"upserted": 1, "entry": rec})
+		return
 	}
 
 	n, err := h.Catalog.Upsert(r.Context(), entries)

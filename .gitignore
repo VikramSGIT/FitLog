@@ -1,2 +1,4 @@
-/megaGymDataset.csv
 /frontend/dist
+/backend/out
+.idea
+.cursor

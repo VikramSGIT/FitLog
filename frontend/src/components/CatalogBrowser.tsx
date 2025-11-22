@@ -83,6 +83,7 @@ export default function CatalogBrowser({ embedded = false, onClose, headerAddon 
   const [items, setItems] = useState<CatalogItem[]>([])
   const [total, setTotal] = useState(0)
   const [showFilters, setShowFilters] = useState(false)
+  const [imageErrors, setImageErrors] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     api.getCatalogFacets()
@@ -190,85 +191,108 @@ export default function CatalogBrowser({ embedded = false, onClose, headerAddon 
                 width: '100%'
               }}
             >
-              <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 2 : 4, minWidth: 0 }}>
-                <Text fw={600} style={{ whiteSpace: 'normal', overflow: 'visible', textOverflow: 'clip', lineHeight: 1.2 }}>
-                  {it.name}
-                </Text>
-                <Group gap={6} wrap="wrap" style={{ minWidth: 0, overflow: 'hidden' }}>
-                  {it.type && <Badge size={isMobile ? 'xs' : 'sm'} color={theme.primaryColor} variant="light">{it.type}</Badge>}
-                  {it.bodyPart && <Badge size={isMobile ? 'xs' : 'sm'} color="blue" variant="light">{it.bodyPart}</Badge>}
-                  {it.equipment && <Badge size={isMobile ? 'xs' : 'sm'} color="grape" variant="light">{it.equipment}</Badge>}
-                  {it.level && <Badge size={isMobile ? 'xs' : 'sm'} color="cyan" variant="light">{it.level}</Badge>}
-                </Group>
-        </div>
-              <Text
-                size={isMobile ? 'xs' : 'sm'}
-                c="dimmed"
-                style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}
-              >
-                {(it.primaryMuscles?.length ? it.primaryMuscles.join(', ') : 'N/A') ?? 'N/A'}
-                {it.secondaryMuscles?.length ? ` · ${it.secondaryMuscles.join(', ')}` : ''}
-              </Text>
-              <Group gap={isMobile ? 8 : 'sm'} justify="flex-end">
-                {isMobile ? (
-                  <>
-                    <ActionIcon
-                      size="lg"
-                      radius="md"
-                      aria-label="Edit catalog exercise"
-                      onClick={() => handleEdit(it.id)}
-                      style={{
-                        background: theme.colorScheme === 'light' ? '#ffffff' : surfaces.card,
-                        border: `1px solid ${surfaces.border}`,
-                        color: baseTextColor
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {it.hasImage && !imageErrors.has(it.id) && (
+                  <div style={{ width: 56, height: 56, borderRadius: 12, overflow: 'hidden', border: `1px solid ${surfaces.border}`, flexShrink: 0, background: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <img
+                      src={`${import.meta.env.VITE_API_BASE_URL || ''}/api/catalog/entries/${it.id}/image`}
+                      alt={it.name}
+                      style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+                      onError={() => {
+                        setImageErrors((prev) => new Set(prev).add(it.id))
                       }}
-                    >
-                      <IconPencil size={18} />
-                    </ActionIcon>
-                    <ActionIcon
-                      size="lg"
-                      radius="md"
-                      aria-label="Add to day"
-                      onClick={() => addToDay(it)}
-                      disabled={!canAddToDay}
-                      style={{
-                        backgroundImage: accentGradient,
-                        color: buttonTextColor,
-                        border: 'none'
-                      }}
-                    >
-                      <IconPlus size={18} />
-                    </ActionIcon>
-                  </>
-                ) : (
-                  <>
-                    <Button
-                      variant="outline"
-                      leftSection={<IconPencil size={18} />}
-                      onClick={() => handleEdit(it.id)}
-                      style={{
-                        background: surfaces.card,
-                        border: `1px solid ${surfaces.border}`,
-                        color: baseTextColor
-                      }}
-                    >
-                      Edit
-                    </Button>
-                    <Button
-                      leftSection={<IconPlus size={18} />}
-                      onClick={() => addToDay(it)}
-                      disabled={!canAddToDay}
-                      style={{
-                        backgroundImage: accentGradient,
-                        color: buttonTextColor,
-                        border: 'none'
-                      }}
-                    >
-                      {isRestDay ? 'Rest day' : dayLoading ? 'Loading...' : 'Add to day'}
-                    </Button>
-                  </>
+                    />
+                  </div>
                 )}
-              </Group>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 2 : 4, minWidth: 0 }}>
+                  <Text fw={600} style={{ whiteSpace: 'normal', overflow: 'visible', textOverflow: 'clip', lineHeight: 1.2 }}>
+                    {it.name}
+                  </Text>
+                  <Group gap={6} wrap="wrap" style={{ minWidth: 0, overflow: 'hidden' }}>
+                    {it.type && (
+                      <Badge size={isMobile ? 'xs' : 'sm'} color={theme.primaryColor} variant="light">
+                        {it.type}
+                      </Badge>
+                    )}
+                    {it.bodyPart && (
+                      <Badge size={isMobile ? 'xs' : 'sm'} color="blue" variant="light">
+                        {it.bodyPart}
+                      </Badge>
+                    )}
+                    {it.equipment && (
+                      <Badge size={isMobile ? 'xs' : 'sm'} color="grape" variant="light">
+                        {it.equipment}
+                      </Badge>
+                    )}
+                    {it.level && (
+                      <Badge size={isMobile ? 'xs' : 'sm'} color="cyan" variant="light">
+                        {it.level}
+                      </Badge>
+                    )}
+                  </Group>
+                </div>
+              </div>
+                  <Group gap={isMobile ? 8 : 'sm'} justify="flex-end">
+                    {isMobile ? (
+                      <>
+                        <ActionIcon
+                          size="lg"
+                          radius="md"
+                          aria-label="Edit catalog exercise"
+                          onClick={() => handleEdit(it.id)}
+                          style={{
+                            background: theme.colorScheme === 'light' ? '#ffffff' : surfaces.card,
+                            border: `1px solid ${surfaces.border}`,
+                            color: baseTextColor
+                          }}
+                        >
+                          <IconPencil size={18} />
+                        </ActionIcon>
+                        <ActionIcon
+                          size="lg"
+                          radius="md"
+                          aria-label="Add to day"
+                          onClick={() => addToDay(it)}
+                          disabled={!canAddToDay}
+                          style={{
+                            backgroundImage: accentGradient,
+                            color: buttonTextColor,
+                            border: 'none'
+                          }}
+                        >
+                          <IconPlus size={18} />
+                        </ActionIcon>
+                      </>
+                    ) : (
+                      <>
+                        <Button
+                          variant="outline"
+                          leftSection={<IconPencil size={18} />}
+                          onClick={() => handleEdit(it.id)}
+                          style={{
+                            background: surfaces.card,
+                            border: `1px solid ${surfaces.border}`,
+                            color: baseTextColor
+                          }}
+                        >
+                          Edit
+                        </Button>
+                        <Button
+                          leftSection={<IconPlus size={18} />}
+                          onClick={() => addToDay(it)}
+                          disabled={!canAddToDay}
+                          style={{
+                            backgroundImage: accentGradient,
+                            color: buttonTextColor,
+                            border: 'none'
+                          }}
+                        >
+                          {isRestDay ? 'Rest day' : dayLoading ? 'Loading...' : 'Add to day'}
+                        </Button>
+                      </>
+                    )}
+                  </Group>
             </div>
           </Card>
         </motion.div>
@@ -280,7 +304,7 @@ export default function CatalogBrowser({ embedded = false, onClose, headerAddon 
     <Stack
       gap="lg"
       style={
-        embedded
+        embedded || isMobile
           ? {
               height: '100%',
               minHeight: 0,
@@ -288,14 +312,14 @@ export default function CatalogBrowser({ embedded = false, onClose, headerAddon 
               flexDirection: 'column',
               flex: 1,
               overflow: 'hidden',
-              background: surfaces.panel,
-              padding: '16px 24px 24px',
-              gap: 16
+              background: embedded ? surfaces.panel : undefined,
+              padding: embedded ? '16px 24px 24px' : (isMobile ? '16px 16px 24px' : undefined),
+              gap: embedded ? 16 : undefined
             }
           : undefined
       }
     >
-              {!embedded && (
+              {!embedded && !isMobile && (
         <Stack gap={6}>
           <Group justify="space-between" align="center">
             <Title order={2} style={{ margin: 0 }}>
@@ -309,15 +333,21 @@ export default function CatalogBrowser({ embedded = false, onClose, headerAddon 
         </Stack>
       )}
 
-      <Stack gap="sm" style={embedded ? { padding: 0 } : undefined}>
-        <Group justify="space-between" align="center" wrap="nowrap" gap="sm" style={{ marginTop: embedded ? 0 : 8 }}>
-          {embedded && (
+      <Stack gap="sm" style={embedded || isMobile ? { padding: 0 } : undefined}>
+        <Group justify="space-between" align="center" wrap="nowrap" gap="sm" style={{ marginTop: embedded || isMobile ? 0 : 8 }}>
+          {(embedded || isMobile) && (
             <ActionIcon
               variant="outline"
               color={theme.primaryColor}
               radius="md"
               size="lg"
-              onClick={() => onClose?.()}
+              onClick={() => {
+                if (embedded) {
+                  onClose?.()
+                } else if (isMobile) {
+                  navigate('/')
+                }
+              }}
               aria-label="Back"
             >
               <IconArrowLeft size={18} />
@@ -343,6 +373,9 @@ export default function CatalogBrowser({ embedded = false, onClose, headerAddon 
               }
             }}
           />
+          {isMobile && !embedded && headerAddon && (
+            <div>{headerAddon}</div>
+          )}
           <ActionIcon
             size="xl"
             radius="md"
@@ -652,7 +685,7 @@ export default function CatalogBrowser({ embedded = false, onClose, headerAddon 
             </Text>
           </Stack>
         </Paper>
-      ) : embedded ? (
+      ) : embedded || isMobile ? (
         <ScrollArea.Autosize
           type="hover"
           scrollbarSize={0}

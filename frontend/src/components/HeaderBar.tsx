@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Box, Button, Group, Menu, Stack, Text, Title, useMantineTheme, ActionIcon, Drawer, Divider } from '@mantine/core'
+import { Box, Button, Group, Menu, Stack, Text, Title, useMantineTheme, ActionIcon, Drawer, Divider, Modal } from '@mantine/core'
 import { DateInput } from '@mantine/dates'
 import {
   IconArrowLeft,
@@ -70,6 +70,7 @@ export default function HeaderBar({
   const resetTimer = useRef<number | null>(null)
   const isMobile = useMediaQuery('(max-width: 640px)')
   const [drawerOpened, setDrawerOpened] = useState(false)
+  const [restDayModalOpen, setRestDayModalOpen] = useState(false)
   const day = useWorkoutStore((s) => s.day)
   const dayLoading = useWorkoutStore((s) => s.dayLoading)
   const hasPendingChanges = useWorkoutStore((s) => s.opLog.length > 0)
@@ -303,10 +304,33 @@ export default function HeaderBar({
     if (!currentDay.isRestDay) {
       const hasExercises = Array.isArray(currentDay.exercises) && currentDay.exercises.length > 0
       if (hasExercises) {
-        alert('Remove all exercises before switching to a rest day.')
+        setRestDayModalOpen(true)
         return
       }
     }
+    setRestUpdating(true)
+    const next = !currentDay.isRestDay
+    useWorkoutStore.getState().queueUpdateDay(currentDay.id, next)
+    notifications.show({
+      title: next ? 'Marked rest day' : 'Switched to training day',
+      message: next ? 'This day is now a rest day.' : 'This day is now a training day.',
+      color: next ? 'yellow' : 'teal'
+    })
+    setRestUpdating(false)
+  }
+
+  const confirmRestDay = async () => {
+    if (dayLoading) return
+    let currentDay = day
+    if (!currentDay) {
+      await ensureDay(selectedDate)
+      currentDay = (useWorkoutStore as any).getState().day
+      if (!currentDay) {
+        setRestDayModalOpen(false)
+        return
+      }
+    }
+    setRestDayModalOpen(false)
     setRestUpdating(true)
     const next = !currentDay.isRestDay
     useWorkoutStore.getState().queueUpdateDay(currentDay.id, next)
@@ -606,6 +630,28 @@ export default function HeaderBar({
           </Stack>
         </Drawer>
       )}
+
+      <Modal
+        opened={restDayModalOpen}
+        onClose={() => setRestDayModalOpen(false)}
+        title="Switch to rest day"
+        radius="md"
+        centered
+      >
+        <Stack gap="md">
+          <Text>
+            Please remove all exercises from this day before marking it as a rest day.
+          </Text>
+          <Group justify="flex-end">
+            <Button
+              onClick={() => setRestDayModalOpen(false)}
+              disabled={restUpdating}
+            >
+              OK
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
     </>
   )
 }

@@ -150,14 +150,14 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
   tempIdCounter: 1,
   setDay: (day) => {
     if (!day) {
-      set({ day: null, dayLoading: false })
+      set({ day: null, dayLoading: false, opLog: [], hiddenIds: new Set() })
       return
     }
     const normalized = {
       ...day,
       exercises: Array.isArray(day.exercises) ? day.exercises.map((ex) => normalizeExercise(ex)) : []
     }
-    set({ day: normalized, dayLoading: false })
+    set({ day: normalized, dayLoading: false, opLog: [], hiddenIds: new Set() })
     // Capture epoch from server to anchor hydration
     ;(async () => {
       try {
@@ -716,13 +716,57 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
   flushOpLog: async () => {
     const state = get()
     if (state.flushInFlight) return false
-    const ops = state.opLog
-    if (!ops || ops.length === 0) {
+    // Collect ops from in-memory queue (current day) + all persisted per-day queues in localStorage
+    const currentDayId = state.day?.id
+    const currentOps = state.opLog
+    let aggregatedOps: WorkoutState['opLog'] = []
+    if (currentOps && currentOps.length > 0) {
+      aggregatedOps = [...currentOps]
+    }
+    // Also pull in any persisted op-logs for other days so a single flush pushes everything
+    try {
+      const currentEpoch = Number(localStorage.getItem('saveEpoch') || '0')
+      const keysToDrop: string[] = []
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i)
+        if (!key || !key.startsWith('oplog:v1:')) continue
+        const raw = localStorage.getItem(key)
+        if (!raw) continue
+        try {
+          const parsed = JSON.parse(raw) as {
+            dayId: string
+            baseEpoch?: number
+            ops?: WorkoutState['opLog']
+          }
+          if (!parsed || !Array.isArray(parsed.ops) || !parsed.dayId) continue
+          // If this is the current day and we already have an in-memory queue, prefer in-memory to avoid duplicates
+          if (currentDayId && parsed.dayId === currentDayId && currentOps && currentOps.length > 0) {
+            continue
+          }
+          if (parsed.baseEpoch && parsed.baseEpoch < currentEpoch) {
+            // Stale queue: drop it
+            keysToDrop.push(key)
+            continue
+          }
+          aggregatedOps = (aggregatedOps as WorkoutState['opLog']).concat(parsed.ops)
+        } catch {
+          // Bad JSON, mark for removal
+          keysToDrop.push(key)
+        }
+      }
+      // Best-effort cleanup of stale/bad keys discovered above
+      keysToDrop.forEach((k) => {
+        try {
+          localStorage.removeItem(k)
+        } catch {}
+      })
+    } catch {}
+    if (!aggregatedOps || aggregatedOps.length === 0) {
       return false
     }
     set({ flushInFlight: true })
     try {
-      const withTempRefs = ops.map((op) => {
+      const withTempRefs = aggregatedOps.map((op) => {
         const addPrefix = (id: string) => (id && id.startsWith('temp-') ? `temp:${id}` : id)
         if (op.type === 'createExercise') return op
         if (op.type === 'createSet') {
@@ -760,15 +804,19 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
         }
         return op
       })
-      const res = await api.saveBatch(withTempRefs as any, crypto.randomUUID?.() || `${Date.now()}`, Number(localStorage.getItem('saveEpoch') || '0'))
-      // Apply mapping for temp IDs
+      const res = await api.saveBatch(
+        withTempRefs as any,
+        crypto.randomUUID?.() || `${Date.now()}`,
+        Number(localStorage.getItem('saveEpoch') || '0')
+      )
+      // Apply mapping for temp IDs (only current day is in memory; other days will be re-fetched from server)
       const exerciseMap = new Map<string, string>()
       const setMap = new Map<string, string>()
       const restMap = new Map<string, string>()
       res.mapping?.exercises?.forEach((m) => exerciseMap.set(m.tempId, m.id))
       res.mapping?.sets?.forEach((m) => setMap.set(m.tempId, m.id))
       res.mapping?.rests?.forEach((m) => restMap.set(m.tempId, m.id))
-      // Replace temp ids in local state
+      // Replace temp ids in local state for the currently loaded day
       const d = get().day
       if (d) {
         const nextExercises = d.exercises.map((ex) => {
@@ -778,7 +826,7 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
           }
           return ex
         })
-        // Update sets
+        // Update sets and rest periods
         nextExercises.forEach((ex, idx) => {
           const updatedSets = ex.sets.map((s) => {
             const mappedSetId = setMap.get(s.id)
@@ -795,13 +843,21 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
         })
         set({ day: { ...d, exercises: nextExercises } })
       }
-      // Clear op log in memory and persistence on success
+      // Clear op log in memory and all persisted queues on success
       set({ opLog: [], hiddenIds: new Set() })
       try {
-        const d3 = get().day
-        if (d3?.id) {
-          localStorage.removeItem(`oplog:v1:${d3.id}`)
+        const keysToRemove: string[] = []
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i)
+          if (key && key.startsWith('oplog:v1:')) {
+            keysToRemove.push(key)
+          }
         }
+        keysToRemove.forEach((k) => {
+          try {
+            localStorage.removeItem(k)
+          } catch {}
+        })
       } catch {}
       // Persist server epoch for future batches (best-effort)
       if (typeof res.serverEpoch === 'number' && !Number.isNaN(res.serverEpoch)) {
@@ -812,12 +868,20 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
       console.error('flushOpLog failed', e)
       const code = (e as any)?.code
       if (code === 'stale_epoch') {
-        // Invalidate local queue and reload to server truth
+        // Invalidate local queues and reload to server truth
         try {
-          const d4 = get().day
-          if (d4?.id) {
-            localStorage.removeItem(`oplog:v1:${d4.id}`)
+          const keysToRemove: string[] = []
+          for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i)
+            if (key && key.startsWith('oplog:v1:')) {
+              keysToRemove.push(key)
+            }
           }
+          keysToRemove.forEach((k) => {
+            try {
+              localStorage.removeItem(k)
+            } catch {}
+          })
         } catch {}
         set({ opLog: [] })
         // Hard reload to ensure full resync

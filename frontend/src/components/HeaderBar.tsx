@@ -244,10 +244,12 @@ export default function HeaderBar({
       return
     }
 
-    // Success path either via explicit 'saved' state or by lastSavedAt change while not saving
+    // Success path: only show notification if we transitioned from 'saving' to 'saved'
+    // or if there's an active notification to update (meaning a save was in progress)
     const savedByFlag = saving === 'saved'
-    const savedByTimestamp = !!lastSavedAt && lastSavedAt !== prevLastSavedAtRef.current && saving !== 'saving'
-    if (savedByFlag || savedByTimestamp) {
+    const wasSaving = prevSavingRef.current === 'saving'
+    const savedByTimestamp = !!lastSavedAt && lastSavedAt !== prevLastSavedAtRef.current && saving !== 'saving' && wasSaving
+    if (savedByFlag || (savedByTimestamp && saveNotifIdRef.current)) {
       const title = saveMode === 'auto' ? 'Auto-saved' : 'Saved'
       const message =
         saveMode === 'auto' ? 'Your changes were saved automatically.' : 'Your changes were saved successfully.'
@@ -264,7 +266,8 @@ export default function HeaderBar({
           ...baseNotificationProps
         })
         saveNotifIdRef.current = null
-      } else {
+      } else if (savedByFlag && wasSaving) {
+        // Only show new notification if we transitioned from saving to saved
         notifications.show({
           title,
           message,
@@ -274,6 +277,9 @@ export default function HeaderBar({
           ...baseNotificationProps
         })
       }
+      prevLastSavedAtRef.current = lastSavedAt ?? prevLastSavedAtRef.current
+    } else if (lastSavedAt !== prevLastSavedAtRef.current) {
+      // Update the ref even if we don't show a notification to prevent false positives
       prevLastSavedAtRef.current = lastSavedAt ?? prevLastSavedAtRef.current
     }
 

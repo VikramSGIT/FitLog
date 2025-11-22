@@ -18,6 +18,7 @@ export default function ExerciseItem({ exercise }: { exercise: Exercise }) {
   const { queueUpdateExercise, queueDeleteExercise, queueCreateSet } = useWorkoutStore()
   const isRestDay = useWorkoutStore((s) => s.day?.isRestDay ?? false)
   const dayLoading = useWorkoutStore((s) => s.dayLoading)
+  const opLog = useWorkoutStore((s) => s.opLog)
   const [comment, setComment] = useState(exercise.comment || '')
   const [showNote, setShowNote] = useState<boolean>(() => (exercise.comment || '').trim().length > 0)
   const [imageError, setImageError] = useState(false)
@@ -26,6 +27,28 @@ export default function ExerciseItem({ exercise }: { exercise: Exercise }) {
   const accentGradient = (theme.other?.accentGradient as string) ?? 'linear-gradient(135deg, #8f5afc 0%, #5197ff 100%)'
   const primaryText = theme.colorScheme === 'light' ? '#0f172a' : '#f8fafc'
   const isMobile = useMediaQuery('(max-width: 640px)')
+
+  // Check if exercise is unsaved (has temp ID or has pending operations)
+  const isUnsaved = exercise.id.startsWith('temp-') || opLog.some((op) => {
+    if (op.type === 'createExercise' && op.tempId === exercise.id) return true
+    if (op.type === 'updateExercise' && op.id === exercise.id) return true
+    if (op.type === 'deleteExercise' && op.id === exercise.id) return true
+    if (op.type === 'createSet' && op.exerciseId === exercise.id) return true
+    if (op.type === 'updateSet') {
+      const sets = Array.isArray(exercise.sets) ? exercise.sets : []
+      return sets.some((s) => s.id === op.id)
+    }
+    if (op.type === 'deleteSet') {
+      const sets = Array.isArray(exercise.sets) ? exercise.sets : []
+      return sets.some((s) => s.id === op.id)
+    }
+    if (op.type === 'createRest' && op.exerciseId === exercise.id) return true
+    if (op.type === 'updateRest' || op.type === 'deleteRest') {
+      const rests = Array.isArray(exercise.restPeriods) ? exercise.restPeriods : []
+      return rests.some((r) => r.id === op.id)
+    }
+    return false
+  })
 
   const saveComment = useCallback(async (value: string) => {
     if ((exercise.comment || '') !== value) {
@@ -69,16 +92,30 @@ export default function ExerciseItem({ exercise }: { exercise: Exercise }) {
   }
 
   return (
-    <Card
-      withBorder
-      radius="lg"
-      padding="lg"
-      style={{
-        background: surfaces.card,
-        borderColor: surfaces.border,
-        backdropFilter: 'none'
-      }}
-    >
+    <>
+      {isUnsaved && (
+        <style>{`
+          @keyframes redGlow {
+            0%, 100% {
+              box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.3), 0 0 20px rgba(239, 68, 68, 0.2), 0 0 40px rgba(239, 68, 68, 0.1);
+            }
+            50% {
+              box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.5), 0 0 30px rgba(239, 68, 68, 0.4), 0 0 60px rgba(239, 68, 68, 0.2);
+            }
+          }
+        `}</style>
+      )}
+      <Card
+        withBorder
+        radius="lg"
+        padding="lg"
+        style={{
+          background: surfaces.card,
+          borderColor: isUnsaved ? '#ef4444' : surfaces.border,
+          backdropFilter: 'none',
+          animation: isUnsaved ? 'redGlow 2s ease-in-out infinite' : undefined
+        }}
+      >
       <Stack gap="md">
         <Group justify="space-between" align="center" wrap="nowrap" gap="md">
           <Group align="center" gap="md" wrap="nowrap" style={{ flex: 1, minWidth: 0 }}>
@@ -96,24 +133,31 @@ export default function ExerciseItem({ exercise }: { exercise: Exercise }) {
             )}
 
             <Stack gap={4} style={{ flex: 1, minWidth: 0 }}>
-              <Title 
-                order={4} 
-                style={{ 
-                  margin: 0,
-                  cursor: exercise.catalogId ? 'pointer' : 'default'
-                }}
-                onClick={exercise.catalogId ? () => navigate(`/catalog/${exercise.catalogId}/details`) : undefined}
-                onTouchEnd={exercise.catalogId ? (e) => {
-                  const target = e.target as HTMLElement
-                  if (target.closest('button, [role="button"], a')) {
-                    return
-                  }
-                  e.preventDefault()
-                  navigate(`/catalog/${exercise.catalogId}/details`)
-                } : undefined}
-              >
+              <Group gap="xs" align="center" wrap="nowrap">
+                <Title 
+                  order={4} 
+                  style={{ 
+                    margin: 0,
+                    cursor: exercise.catalogId ? 'pointer' : 'default'
+                  }}
+                  onClick={exercise.catalogId ? () => navigate(`/catalog/${exercise.catalogId}/details`) : undefined}
+                  onTouchEnd={exercise.catalogId ? (e) => {
+                    const target = e.target as HTMLElement
+                    if (target.closest('button, [role="button"], a')) {
+                      return
+                    }
+                    e.preventDefault()
+                    navigate(`/catalog/${exercise.catalogId}/details`)
+                  } : undefined}
+                >
                   {exercise.name}
                 </Title>
+                {isUnsaved && !isMobile && (
+                  <Text size="sm" c="red" fw={500} style={{ opacity: 0.9 }}>
+                    (unsaved)
+                  </Text>
+                )}
+              </Group>
               <AnimatePresence initial={false}>
                 {showNote && (
                   <motion.div
@@ -225,6 +269,7 @@ export default function ExerciseItem({ exercise }: { exercise: Exercise }) {
             </Group>
           </Stack>
         </Card>
+      </>
       )
     }
 

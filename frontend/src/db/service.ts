@@ -43,7 +43,6 @@ export type FitLogDatabase = RxDatabase<FitLogDatabaseCollections>;
 let dbPromise: Promise<FitLogDatabase> | null = null;
 
 const createDatabase = async () => {
-  console.log('Creating database...');
   const db = await createRxDatabase<FitLogDatabaseCollections>({
     name: 'fitlogdb',
     storage: wrappedValidateAjvStorage({
@@ -53,9 +52,6 @@ const createDatabase = async () => {
     multiInstance: true,
     eventReduce: true,
   });
-
-  console.log('Database created.');
-  console.log('Adding collections...');
 
   await db.addCollections({
     workout_days: {
@@ -78,22 +74,24 @@ const createDatabase = async () => {
     }
   });
 
-  console.log('Collections added.');
-
   // Add a hook to generate a tempId for new documents
   Object.values(db.collections).forEach((collection) => {
     collection.preInsert((docData) => {
       if (!docData.tempId) {
         docData.tempId = uuidv4();
       }
-      if (docData.isUnsynced === undefined) {
-        docData.isUnsynced = true;
+      
+      // Skip adding isUnsynced, createdAt, updatedAt for deleted_documents collection
+      if (collection.name !== 'deleted_documents') {
+        if (docData.isUnsynced === undefined) {
+          docData.isUnsynced = true;
+        }
+        const now = new Date().toISOString();
+        if (!docData.createdAt) {
+          docData.createdAt = now;
+        }
+        docData.updatedAt = now;
       }
-      const now = new Date().toISOString();
-      if (!docData.createdAt) {
-        docData.createdAt = now;
-      }
-      docData.updatedAt = now;
 
       // For sets, calculate volume
       if (collection.name === 'sets') {
@@ -103,7 +101,10 @@ const createDatabase = async () => {
     }, false);
 
     collection.preSave((docData, doc) => {
-        docData.updatedAt = new Date().toISOString();
+        // Skip updating updatedAt for deleted_documents collection
+        if (collection.name !== 'deleted_documents') {
+          docData.updatedAt = new Date().toISOString();
+        }
         // For sets, recalculate volume
         if (collection.name === 'sets') {
             const set = docData as Set;

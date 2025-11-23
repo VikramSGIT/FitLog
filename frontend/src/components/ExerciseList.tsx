@@ -20,6 +20,7 @@ export default function ExerciseList({ onAddFromCatalog }: ExerciseListProps) {
     isLoading: dayLoading,
     exercises,
   } = useWorkoutStore()
+  
   const theme = useMantineTheme()
   const surfaces = (theme.other?.surfaces as ThemeSurfaces) ?? DEFAULT_SURFACES
   const accentGradient = (theme.other?.accentGradient as string) ?? 'linear-gradient(135deg, #22d3ee 0%, #6366f1 100%)'

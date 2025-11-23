@@ -30,7 +30,7 @@ export default defineConfig({
     }
   },
   esbuild: {
-    drop: ['console', 'debugger']
+    // drop: ['console', 'debugger'] // COMMENTED OUT FOR DEBUGGING - Remove console drops to see logs
   },
   server: {
     port: 5173,

@@ -34,7 +34,7 @@ function Home() {
   const nav = useNavigate()
   const theme = useMantineTheme()
   const { preset, selectPreset, presets } = useThemePreset()
-  const { init, cleanup, sync, isSyncing } = useWorkoutStore()
+  const { init, cleanup, sync, saveStatus, saveMode } = useWorkoutStore()
 
   const surfaces = useMemo<ThemeSurfaces>(
     () => (theme.other?.surfaces as ThemeSurfaces) ?? DEFAULT_SURFACES,
@@ -56,7 +56,9 @@ function Home() {
         setUserId(res.userId)
         init(res.userId)
       })
-      .catch(() => setAuthed(false))
+      .catch((err) => {
+        setAuthed(false)
+      })
       .finally(() => setCheckingSession(false))
     
     return () => {
@@ -218,7 +220,8 @@ function Home() {
           <HeaderBar
             onBrowseCatalog={() => nav('/catalog')}
             onSave={sync}
-            saving={isSyncing ? 'saving' : 'idle'}
+            saving={saveStatus}
+            saveMode={saveMode}
             onLogout={onLogout}
             userLabel={email || 'Account'}
           />

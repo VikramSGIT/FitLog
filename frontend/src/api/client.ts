@@ -1,17 +1,22 @@
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json', ...(init?.headers || {}) },
-    ...init
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(text || `HTTP ${res.status}`);
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', ...(init?.headers || {}) },
+      ...init
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(text || `HTTP ${res.status}`);
+    }
+    if (res.status === 204) return undefined as unknown as T;
+    const data = await res.json() as Promise<T>;
+    return data;
+  } catch (error) {
+    throw error;
   }
-  if (res.status === 204) return undefined as unknown as T;
-  return res.json() as Promise<T>;
 }
 
 export type WorkoutSet = {
@@ -170,8 +175,9 @@ export const api = {
   me: () => request<{ userId: string; email: string }>('/api/auth/me'),
 
   // Days
-  getDayByDate: (date: string, ensure = true) =>
-    request<DayWithDetails | { day: null }>(`/api/days?date=${date}&ensure=${ensure ? 'true' : 'false'}`),
+  getDayByDate: (date: string, ensure = true) => {
+    return request<DayWithDetails | { day: null }>(`/api/days?date=${date}&ensure=${ensure ? 'true' : 'false'}`);
+  },
   createDay: (date: string) =>
     request<DayWithDetails>('/api/days', { method: 'POST', body: JSON.stringify({ date }) }),
   updateDay: (dayId: string, data: { isRestDay: boolean }) =>

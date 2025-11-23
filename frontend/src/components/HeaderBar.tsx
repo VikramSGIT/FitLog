@@ -418,7 +418,7 @@ export default function HeaderBar({
                   icon={<IconDeviceFloppy size={18} />}
                   label={saveHoverLabel}
                   ariaLabel={label}
-                  onClick={() => {
+                  onClick={async () => {
                     // show a quick feedback immediately
                     if (!saveNotifIdRef.current) {
                       const id = notifications.show({
@@ -430,7 +430,12 @@ export default function HeaderBar({
                       })
                       saveNotifIdRef.current = String(id)
                     }
-                    onSave()
+                    try {
+                      await onSave()
+                    } catch (error) {
+                      // Error is handled by the store's saveStatus
+                      console.error('Save failed:', error)
+                    }
                   }}
                   loading={saving === 'saving'}
                   disabled={saving === 'saving'}

@@ -1,7 +1,8 @@
 import React, { useMemo, useState, useCallback, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
-import { api, Exercise } from '@/api/client'
+import { api } from '@/api/client'
+import { Exercise } from '@/db/schema'
 import { useWorkoutStore } from '@/store/useWorkoutStore'
 import SetList from './SetList'
 import { useAutoSave } from '@/hooks/useAutoSave'
@@ -15,7 +16,7 @@ const DEFAULT_REST_DURATION_SECONDS = 90
 
 export default function ExerciseItem({ exercise }: { exercise: Exercise }) {
   const navigate = useNavigate()
-  const { updateExercise, deleteExercise, addSet, activeDay, isLoading: dayLoading } = useWorkoutStore()
+  const { updateExercise, deleteExercise, addSet, activeDay, isLoading: dayLoading, sets } = useWorkoutStore()
   const isRestDay = activeDay?.isRestDay ?? false
   const [comment, setComment] = useState(exercise.comment || '')
   const [showNote, setShowNote] = useState<boolean>(() => (exercise.comment || '').trim().length > 0)
@@ -26,7 +27,10 @@ export default function ExerciseItem({ exercise }: { exercise: Exercise }) {
   const primaryText = theme.colorScheme === 'light' ? '#0f172a' : '#f8fafc'
   const isMobile = useMediaQuery('(max-width: 640px)')
 
-  const isUnsaved = exercise.isUnsynced
+  // Check if exercise or any of its sets are unsynced
+  const exerciseSets = sets.filter(s => s.exerciseId === exercise.tempId)
+  const hasUnsyncedSets = exerciseSets.some(s => s.isUnsynced === true)
+  const isUnsaved = exercise.isUnsynced === true || hasUnsyncedSets
 
   const saveComment = useCallback(async (value: string) => {
     if ((exercise.comment || '') !== value) {

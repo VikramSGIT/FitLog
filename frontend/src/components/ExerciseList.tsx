@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { Exercise } from '@/api/client'
+import { Exercise } from '@/db/schema'
 import { useWorkoutStore } from '@/store/useWorkoutStore'
 import ExerciseItem from './ExerciseItem'
 import { Alert, Button, Group, Loader, Paper, Stack, Text, Title, Tooltip, useMantineTheme, ActionIcon } from '@mantine/core'

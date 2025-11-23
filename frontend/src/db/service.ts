@@ -5,6 +5,7 @@ import {
   RxCollection,
 } from 'rxdb';
 import { getRxStorageDexie } from 'rxdb/plugins/dexie'; // Dexie storage plugin
+import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
 import { RxDBQueryBuilderPlugin } from 'rxdb/plugins/query-builder';
 import { RxDBUpdatePlugin } from 'rxdb/plugins/update';
@@ -45,7 +46,9 @@ const createDatabase = async () => {
   console.log('Creating database...');
   const db = await createRxDatabase<FitLogDatabaseCollections>({
     name: 'fitlogdb',
-    storage: getRxStorageDexie(), // Use Dexie storage
+    storage: wrappedValidateAjvStorage({
+        storage: getRxStorageDexie(),
+    }),
     password: 'my-password', // TODO: use a real password
     multiInstance: true,
     eventReduce: true,

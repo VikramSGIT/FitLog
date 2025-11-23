@@ -71,11 +71,20 @@ export default function HeaderBar({
   const isMobile = useMediaQuery('(max-width: 640px)')
   const [drawerOpened, setDrawerOpened] = useState(false)
   const [restDayModalOpen, setRestDayModalOpen] = useState(false)
-  const day = useWorkoutStore((s) => s.day)
-  const dayLoading = useWorkoutStore((s) => s.dayLoading)
-  const hasPendingChanges = useWorkoutStore((s) => s.opLog.length > 0)
-  const setDay = useWorkoutStore((s) => s.setDay)
-  const setDayLoading = useWorkoutStore((s) => s.setDayLoading)
+  const {
+    activeDay: day,
+    isLoading: dayLoading,
+    exercises,
+    sets,
+    deletedDocumentsCount,
+    loadDay,
+  } = useWorkoutStore()
+  const hasPendingChanges =
+    day?.isUnsynced ||
+    exercises.some(e => e.isUnsynced) ||
+    sets.some(s => s.isUnsynced) ||
+    deletedDocumentsCount > 0
+
   const [restUpdating, setRestUpdating] = useState(false)
   const [selectedDate, setSelectedDate] = useState<string>(() => {
     const d = day?.workoutDate
@@ -147,34 +156,10 @@ export default function HeaderBar({
       )}
     </Group>
   )
-  async function ensureDay(date: string) {
-    if (!date) return
-    setDayLoading(true)
-    try {
-      const res = await api.getDayByDate(date, true)
-      if ('day' in (res as any) && (res as any).day === null) {
-        const created = await api.createDay(date)
-        setDay(created)
-      } else {
-        setDay(res as any)
-      }
-    } catch {
-      // ignore
-    } finally {
-      setDayLoading(false)
-    }
-  }
 
   useEffect(() => {
     setSelectedDate(day?.workoutDate ?? format(new Date(), 'yyyy-MM-dd'))
   }, [day?.workoutDate])
-
-  // Auto-load/create the day on mount or when date changes and no day is present
-  useEffect(() => {
-    if (!day && selectedDate && !dayLoading) {
-      void ensureDay(selectedDate)
-    }
-  }, [day, selectedDate, dayLoading])
 
   // Show notifications on save result transitions (supports stores that go saving -> saved or saving -> idle with lastSavedAt update)
   useEffect(() => {
@@ -296,19 +281,20 @@ export default function HeaderBar({
     if (!value) return
     const formatted = format(value, 'yyyy-MM-dd')
     setSelectedDate(formatted)
-    await ensureDay(formatted)
+    await loadDay(formatted)
   }
 
   const toggleRestDay = async () => {
     if (dayLoading) return
     let currentDay = day
     if (!currentDay) {
-      await ensureDay(selectedDate)
-      currentDay = (useWorkoutStore as any).getState().day
+      // await ensureDay(selectedDate)
+      await loadDay(selectedDate)
+      currentDay = useWorkoutStore.getState().activeDay
       if (!currentDay) return
     }
     if (!currentDay.isRestDay) {
-      const hasExercises = Array.isArray(currentDay.exercises) && currentDay.exercises.length > 0
+      const hasExercises = Array.isArray(exercises) && exercises.length > 0
       if (hasExercises) {
         setRestDayModalOpen(true)
         return
@@ -316,7 +302,7 @@ export default function HeaderBar({
     }
     setRestUpdating(true)
     const next = !currentDay.isRestDay
-    useWorkoutStore.getState().queueUpdateDay(currentDay.id, next)
+    useWorkoutStore.getState().updateDay(currentDay.tempId, { isRestDay: next })
     notifications.show({
       title: next ? 'Marked rest day' : 'Switched to training day',
       message: next ? 'This day is now a rest day.' : 'This day is now a training day.',
@@ -329,8 +315,9 @@ export default function HeaderBar({
     if (dayLoading) return
     let currentDay = day
     if (!currentDay) {
-      await ensureDay(selectedDate)
-      currentDay = (useWorkoutStore as any).getState().day
+      // await ensureDay(selectedDate)
+      await loadDay(selectedDate)
+      currentDay = useWorkoutStore.getState().activeDay
       if (!currentDay) {
         setRestDayModalOpen(false)
         return
@@ -339,7 +326,7 @@ export default function HeaderBar({
     setRestDayModalOpen(false)
     setRestUpdating(true)
     const next = !currentDay.isRestDay
-    useWorkoutStore.getState().queueUpdateDay(currentDay.id, next)
+    useWorkoutStore.getState().updateDay(currentDay.tempId, { isRestDay: next })
     notifications.show({
       title: next ? 'Marked rest day' : 'Switched to training day',
       message: next ? 'This day is now a rest day.' : 'This day is now a training day.',

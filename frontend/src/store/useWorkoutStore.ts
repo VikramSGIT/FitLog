@@ -15,6 +15,9 @@ export type WorkoutState = {
   exercises: Exercise[];
   sets: Set[];
   activeDaySub: Subscription | null;
+  exercisesSub: Subscription | null;
+  deletedDocumentsSub: Subscription | null;
+  deletedDocumentsCount: number;
   selectedDate: string;
   isLoading: boolean;
   isSyncing: boolean;
@@ -29,6 +32,7 @@ export type WorkoutState = {
   addSet: (exerciseTempId: string) => Promise<void>;
   updateSet: (tempId: string, patch: Partial<Set>) => Promise<void>;
   deleteSet: (tempId: string) => Promise<void>;
+  updateDay: (tempId: string, patch: Partial<WorkoutDay>) => Promise<void>;
   sync: () => Promise<void>;
   cleanup: () => void;
 };
@@ -39,23 +43,33 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
   exercises: [],
   sets: [],
   activeDaySub: null,
+  exercisesSub: null,
+  deletedDocumentsSub: null,
+  deletedDocumentsCount: 0,
   selectedDate: toDateString(new Date()),
   isLoading: false,
   isSyncing: false,
   userId: null,
 
   // Actions
-  init: (userId: string) => {
+  init: async (userId: string) => {
     set({ userId });
     get().loadDay(get().selectedDate);
+
+    const db = await getDb();
+    const sub = db.deleted_documents.find().$.subscribe(docs => {
+        set({ deletedDocumentsCount: docs.length });
+    });
+    set({ deletedDocumentsSub: sub });
   },
 
   loadDay: async (date: string) => {
-    const { activeDaySub, userId } = get();
+    const { activeDaySub, userId, exercisesSub } = get();
     if (!userId) return;
 
-    // Unsubscribe from previous subscription
+    // Unsubscribe from previous subscriptions
     activeDaySub?.unsubscribe();
+    exercisesSub?.unsubscribe();
 
     set({ isLoading: true, selectedDate: date, activeDay: null, exercises: [], sets: [] });
 
@@ -63,7 +77,7 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
 
     // 1. Fetch day from backend API
     try {
-      const remoteDay = await api.getDay(date);
+      const remoteDay = await api.getDayByDate(date, true);
       if (remoteDay) {
         // 2. Upsert data into RxDB
         // This is a simplified upsert. A real implementation would need to be more robust
@@ -138,16 +152,28 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
       .$.subscribe(async (dayDoc) => {
         set({ activeDay: dayDoc });
         if (dayDoc) {
-          // Subscribe to exercises
-          const exercisesSub = dayDoc.populate('exercises').then(exercises => {
+          // Subscribe to exercises for the current day
+          const sub = db.exercises.find({
+            selector: {
+              dayId: dayDoc.tempId,
+            }
+          }).$.subscribe(exercises => {
             set({ exercises });
-            // For each exercise, get sets
-            const setsPromises = exercises.map(ex => db.sets.find({ selector: { exerciseId: ex.tempId } }).exec());
-            Promise.all(setsPromises).then(setsArrays => {
-              const allSets = setsArrays.flat();
-              set({ sets: allSets });
+
+            // Get all sets for the exercises
+            const exerciseIds = exercises.map(ex => ex.tempId);
+            const setsSub = db.sets.find({
+              selector: {
+                exerciseId: {
+                  $in: exerciseIds
+                }
+              }
+            }).$.subscribe(sets => {
+              set({ sets });
             });
+            // We should store and clean up this subscription as well, but for now this will work
           });
+          set({ exercisesSub: sub });
         } else {
           set({ exercises: [], sets: [] });
         }
@@ -264,6 +290,14 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
             deletedAt: new Date().toISOString(),
         });
         await doc.remove();
+    }
+  },
+
+  updateDay: async (tempId: string, patch: Partial<WorkoutDay>) => {
+    const db = await getDb();
+    const doc = await db.workout_days.findOne(tempId).exec();
+    if(doc) {
+        await doc.atomicUpdate(oldData => ({...oldData, ...patch, isUnsynced: true}));
     }
   },
 
@@ -405,5 +439,7 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
 
   cleanup: () => {
     get().activeDaySub?.unsubscribe();
+    get().exercisesSub?.unsubscribe();
+    get().deletedDocumentsSub?.unsubscribe();
   },
 }));

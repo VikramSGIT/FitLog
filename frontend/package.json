@@ -16,6 +16,7 @@
     "@mantine/hooks": "^8.3.6",
     "@mantine/notifications": "^8.3.6",
     "@tabler/icons-react": "^3.35.0",
+    "ajv": "^8.17.1",
     "date-fns": "^4.1.0",
     "dayjs": "^1.11.19",
     "framer-motion": "^12.23.24",

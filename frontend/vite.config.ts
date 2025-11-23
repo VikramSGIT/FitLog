@@ -13,6 +13,8 @@ export default defineConfig({
   optimizeDeps: {
     include: [
       'rxdb',
+      'rxdb/plugins/dexie',
+      'rxdb/plugins/validate-ajv',
       'rxjs',
     ]
   },

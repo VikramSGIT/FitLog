@@ -78,10 +78,35 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
     // 1. Fetch day from backend API
     try {
       const remoteDay = await api.getDayByDate(date, true);
-      if (remoteDay) {
+      // Check if remoteDay is actually a DayWithDetails (has 'id' property) and not { day: null }
+      if (remoteDay && 'id' in remoteDay && remoteDay.id) {
         // 2. Upsert data into RxDB
-        // This is a simplified upsert. A real implementation would need to be more robust
-        // and handle conflicts between local and remote data.
+        // First, check if a day already exists for this date/user
+        const existingDay = await db.workout_days.findOne({
+          selector: {
+            workoutDate: date,
+            userId: userId,
+          }
+        }).exec();
+        
+        // If existing day has a different tempId, we need to update exercises to reference the new tempId
+        if (existingDay && existingDay.tempId !== remoteDay.id) {
+          // Update all exercises that reference the old tempId to use the new one
+          const oldExercises = await db.exercises.find({
+            selector: { dayId: existingDay.tempId }
+          }).exec();
+          
+          for (const ex of oldExercises) {
+            await ex.atomicUpdate((oldData) => ({
+              ...oldData,
+              dayId: remoteDay.id
+            }));
+          }
+          
+          // Remove the old day document
+          await existingDay.remove();
+        }
+        
         const workoutDayData: WorkoutDay = {
             id: remoteDay.id,
             tempId: remoteDay.id, // Using the backend ID as tempId for synced data
@@ -153,24 +178,39 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
         set({ activeDay: dayDoc });
         if (dayDoc) {
           // Subscribe to exercises for the current day
+          // Check both tempId and id to handle synced and unsynced days
+          const dayIdToMatch = dayDoc.tempId || dayDoc.id;
+          if (!dayIdToMatch) {
+            set({ exercises: [], sets: [] });
+            return;
+          }
+          
           const sub = db.exercises.find({
             selector: {
-              dayId: dayDoc.tempId,
+              dayId: dayIdToMatch,
             }
           }).$.subscribe(exercises => {
-            set({ exercises });
+            // Sort exercises by position to ensure correct order
+            const sortedExercises = [...exercises].sort((a, b) => a.position - b.position);
+            set({ exercises: sortedExercises });
 
             // Get all sets for the exercises
-            const exerciseIds = exercises.map(ex => ex.tempId);
-            const setsSub = db.sets.find({
-              selector: {
-                exerciseId: {
-                  $in: exerciseIds
+            const exerciseIds = sortedExercises.map(ex => ex.tempId || ex.id).filter(Boolean);
+            if (exerciseIds.length > 0) {
+              const setsSub = db.sets.find({
+                selector: {
+                  exerciseId: {
+                    $in: exerciseIds
+                  }
                 }
-              }
-            }).$.subscribe(sets => {
-              set({ sets });
-            });
+              }).$.subscribe(sets => {
+                // Sort sets by position
+                const sortedSets = [...sets].sort((a, b) => a.position - b.position);
+                set({ sets: sortedSets });
+              });
+            } else {
+              set({ sets: [] });
+            }
             // We should store and clean up this subscription as well, but for now this will work
           });
           set({ exercisesSub: sub });

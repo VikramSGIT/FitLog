@@ -15,10 +15,8 @@ const DEFAULT_REST_DURATION_SECONDS = 90
 
 export default function ExerciseItem({ exercise }: { exercise: Exercise }) {
   const navigate = useNavigate()
-  const { queueUpdateExercise, queueDeleteExercise, queueCreateSet } = useWorkoutStore()
-  const isRestDay = useWorkoutStore((s) => s.day?.isRestDay ?? false)
-  const dayLoading = useWorkoutStore((s) => s.dayLoading)
-  const opLog = useWorkoutStore((s) => s.opLog)
+  const { updateExercise, deleteExercise, addSet, activeDay, isLoading: dayLoading } = useWorkoutStore()
+  const isRestDay = activeDay?.isRestDay ?? false
   const [comment, setComment] = useState(exercise.comment || '')
   const [showNote, setShowNote] = useState<boolean>(() => (exercise.comment || '').trim().length > 0)
   const [imageError, setImageError] = useState(false)
@@ -28,35 +26,15 @@ export default function ExerciseItem({ exercise }: { exercise: Exercise }) {
   const primaryText = theme.colorScheme === 'light' ? '#0f172a' : '#f8fafc'
   const isMobile = useMediaQuery('(max-width: 640px)')
 
-  // Check if exercise is unsaved (has temp ID or has pending operations)
-  const isUnsaved = exercise.id.startsWith('temp-') || opLog.some((op) => {
-    if (op.type === 'createExercise' && op.tempId === exercise.id) return true
-    if (op.type === 'updateExercise' && op.id === exercise.id) return true
-    if (op.type === 'deleteExercise' && op.id === exercise.id) return true
-    if (op.type === 'createSet' && op.exerciseId === exercise.id) return true
-    if (op.type === 'updateSet') {
-      const sets = Array.isArray(exercise.sets) ? exercise.sets : []
-      return sets.some((s) => s.id === op.id)
-    }
-    if (op.type === 'deleteSet') {
-      const sets = Array.isArray(exercise.sets) ? exercise.sets : []
-      return sets.some((s) => s.id === op.id)
-    }
-    if (op.type === 'createRest' && op.exerciseId === exercise.id) return true
-    if (op.type === 'updateRest' || op.type === 'deleteRest') {
-      const rests = Array.isArray(exercise.restPeriods) ? exercise.restPeriods : []
-      return rests.some((r) => r.id === op.id)
-    }
-    return false
-  })
+  const isUnsaved = exercise.isUnsynced
 
   const saveComment = useCallback(async (value: string) => {
     if ((exercise.comment || '') !== value) {
-      queueUpdateExercise(exercise.id, { comment: value })
+      updateExercise(exercise.tempId, { comment: value })
       return true
     }
     return false
-  }, [exercise.id, exercise.comment, queueUpdateExercise])
+  }, [exercise.tempId, exercise.comment, updateExercise])
   useAutoSave(comment, saveComment, AUTO_SAVE_DELAY_MS)
 
   useEffect(() => {
@@ -65,30 +43,21 @@ export default function ExerciseItem({ exercise }: { exercise: Exercise }) {
 
   async function onDelete() {
     if (dayLoading) return
-    queueDeleteExercise(exercise.id)
+    deleteExercise(exercise.tempId)
   }
 
-  const nextSetPosition = useMemo(() => {
-    const sets = Array.isArray(exercise.sets) ? exercise.sets : []
-    return (sets[sets.length - 1]?.position ?? 0) + 1
-  }, [exercise.sets])
-
-  const nextRestPosition = useMemo(() => {
-    const sets = Array.isArray(exercise.sets) ? exercise.sets : []
-    return sets[sets.length - 1]?.position ?? 0
-  }, [exercise.sets])
-
-  async function addSet() {
+  const handleAddSet = () => {
     if (dayLoading) return
-    queueCreateSet(exercise.id, { position: nextSetPosition, reps: 10, weightKg: 20, isWarmup: false })
+    addSet(exercise.tempId)
   }
 
+  // addRest is not implemented in the new store yet
   async function addRest() {
-    if (dayLoading) return
-    useWorkoutStore.getState().queueCreateRest(exercise.id, {
-      position: nextRestPosition,
-      durationSeconds: DEFAULT_REST_DURATION_SECONDS
-    })
+    // if (dayLoading) return
+    // useWorkoutStore.getState().queueCreateRest(exercise.id, {
+    //   position: nextRestPosition,
+    //   durationSeconds: DEFAULT_REST_DURATION_SECONDS
+    // })
   }
 
   return (
@@ -235,7 +204,7 @@ export default function ExerciseItem({ exercise }: { exercise: Exercise }) {
               <Title order={5}>Sets & Rest</Title>
               <Group gap="sm">
                 <Button
-                  onClick={addSet}
+                  onClick={handleAddSet}
                   disabled={isRestDay || dayLoading}
                   leftSection={<IconPlus size={16} />}
                   style={{
@@ -245,15 +214,6 @@ export default function ExerciseItem({ exercise }: { exercise: Exercise }) {
                   }}
                 >
                   Add Set
-                </Button>
-                <Button
-                  variant="outline"
-                  color={theme.primaryColor}
-                  onClick={addRest}
-                  disabled={isRestDay || dayLoading}
-                  leftSection={<IconPlus size={16} />}
-                >
-                  Add Rest
                 </Button>
               </Group>
             </Group>
@@ -272,5 +232,3 @@ export default function ExerciseItem({ exercise }: { exercise: Exercise }) {
       </>
       )
     }
-
-

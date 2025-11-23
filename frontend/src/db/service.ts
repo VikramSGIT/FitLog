@@ -1,0 +1,120 @@
+import {
+  createRxDatabase,
+  addRxPlugin,
+  RxDatabase,
+  RxCollection,
+} from 'rxdb';
+import { getRxStorageDexie } from 'rxdb/plugins/dexie'; // Dexie storage plugin
+import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
+import { RxDBQueryBuilderPlugin } from 'rxdb/plugins/query-builder';
+import { RxDBUpdatePlugin } from 'rxdb/plugins/update';
+import { v4 as uuidv4 } from 'uuid';
+
+import {
+  WorkoutDay,
+  Exercise,
+  Set,
+  DeletedDocument,
+  workoutDaySchema,
+  exerciseSchema,
+  setSchema,
+  deletedDocumentSchema,
+  WorkoutDayDoc,
+  ExerciseDoc,
+  SetDoc,
+} from './schema';
+
+// Add plugins
+addRxPlugin(RxDBDevModePlugin);
+addRxPlugin(RxDBQueryBuilderPlugin);
+addRxPlugin(RxDBUpdatePlugin);
+
+
+export type FitLogDatabaseCollections = {
+  workout_days: RxCollection<WorkoutDay>;
+  exercises: RxCollection<Exercise>;
+  sets: RxCollection<Set>;
+  deleted_documents: RxCollection<DeletedDocument>;
+};
+
+export type FitLogDatabase = RxDatabase<FitLogDatabaseCollections>;
+
+let dbPromise: Promise<FitLogDatabase> | null = null;
+
+const createDatabase = async () => {
+  console.log('Creating database...');
+  const db = await createRxDatabase<FitLogDatabaseCollections>({
+    name: 'fitlogdb',
+    storage: getRxStorageDexie(), // Use Dexie storage
+    password: 'my-password', // TODO: use a real password
+    multiInstance: true,
+    eventReduce: true,
+  });
+
+  console.log('Database created.');
+  console.log('Adding collections...');
+
+  await db.addCollections({
+    workout_days: {
+      schema: workoutDaySchema,
+    },
+    exercises: {
+      schema: exerciseSchema,
+    },
+    sets: {
+      schema: setSchema,
+      methods: {
+        // Example of a method to calculate volume
+        getVolume: function (this: SetDoc) {
+          return this.reps * this.weightKg;
+        },
+      },
+    },
+    deleted_documents: {
+        schema: deletedDocumentSchema,
+    }
+  });
+
+  console.log('Collections added.');
+
+  // Add a hook to generate a tempId for new documents
+  Object.values(db.collections).forEach((collection) => {
+    collection.preInsert((docData) => {
+      if (!docData.tempId) {
+        docData.tempId = uuidv4();
+      }
+      if (docData.isUnsynced === undefined) {
+        docData.isUnsynced = true;
+      }
+      const now = new Date().toISOString();
+      if (!docData.createdAt) {
+        docData.createdAt = now;
+      }
+      docData.updatedAt = now;
+
+      // For sets, calculate volume
+      if (collection.name === 'sets') {
+        const set = docData as Set;
+        set.volumeKg = set.reps * set.weightKg;
+      }
+    }, false);
+
+    collection.preSave((docData, doc) => {
+        docData.updatedAt = new Date().toISOString();
+        // For sets, recalculate volume
+        if (collection.name === 'sets') {
+            const set = docData as Set;
+            set.volumeKg = set.reps * set.weightKg;
+        }
+    }, false)
+  });
+
+  return db;
+};
+
+export const getDb = (): Promise<FitLogDatabase> => {
+  if (!dbPromise) {
+    dbPromise = createDatabase();
+  }
+  return dbPromise;
+};

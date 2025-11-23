@@ -15,8 +15,11 @@ type ExerciseListProps = {
 }
 
 export default function ExerciseList({ onAddFromCatalog }: ExerciseListProps) {
-  const day = useWorkoutStore((s) => s.day)
-  const dayLoading = useWorkoutStore((s) => s.dayLoading)
+  const {
+    activeDay,
+    isLoading: dayLoading,
+    exercises,
+  } = useWorkoutStore()
   const theme = useMantineTheme()
   const surfaces = (theme.other?.surfaces as ThemeSurfaces) ?? DEFAULT_SURFACES
   const accentGradient = (theme.other?.accentGradient as string) ?? 'linear-gradient(135deg, #22d3ee 0%, #6366f1 100%)'
@@ -26,15 +29,14 @@ export default function ExerciseList({ onAddFromCatalog }: ExerciseListProps) {
   const loadingRef = useRef<string | null>(null)
   const isMobile = useMediaQuery('(max-width: 640px)')
 
-  const exercises = Array.isArray(day?.exercises) ? (day?.exercises as Exercise[]) : []
-  const isRestDay = Boolean(day?.isRestDay)
+  const isRestDay = Boolean(activeDay?.isRestDay)
 
   // rest toggle moved to HeaderBar
 
   // date ensure moved to HeaderBar
 
   const handleAddFromCatalog = () => {
-    if (!day || isRestDay || dayLoading) return
+    if (!activeDay || isRestDay || dayLoading) return
     onAddFromCatalog?.()
   }
 
@@ -55,7 +57,7 @@ export default function ExerciseList({ onAddFromCatalog }: ExerciseListProps) {
                 radius="md"
                 aria-label="Add from catalog"
                 onClick={handleAddFromCatalog}
-                disabled={!day || isRestDay || dayLoading}
+                disabled={!activeDay || isRestDay || dayLoading}
                 style={{
                   backgroundImage: accentGradient,
                   color: ctaTextColor,
@@ -68,7 +70,7 @@ export default function ExerciseList({ onAddFromCatalog }: ExerciseListProps) {
           ) : (
             <Button
               onClick={handleAddFromCatalog}
-              disabled={!day || isRestDay || dayLoading}
+              disabled={!activeDay || isRestDay || dayLoading}
               leftSection={<IconPlus size={18} />}
               style={{
                 backgroundImage: accentGradient,
@@ -91,7 +93,7 @@ export default function ExerciseList({ onAddFromCatalog }: ExerciseListProps) {
         </Group>
       )}
 
-      {day && isRestDay && (
+      {activeDay && isRestDay && (
         <Alert
           icon={<IconMoonStars size={18} />}
           color="yellow"
@@ -104,7 +106,7 @@ export default function ExerciseList({ onAddFromCatalog }: ExerciseListProps) {
       )}
 
       <AnimatePresence initial={false}>
-        {!day ? (
+        {!activeDay ? (
           <Paper
             withBorder
             radius="lg"
@@ -150,7 +152,7 @@ export default function ExerciseList({ onAddFromCatalog }: ExerciseListProps) {
           <Stack gap="sm">
         {exercises.map((ex: Exercise) => (
               <motion.div
-                key={ex.id}
+                key={ex.tempId}
                 initial={{ opacity: 0, y: 16 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.97 }}

@@ -8,8 +8,7 @@ import { DEFAULT_SURFACES, ThemeSurfaces } from '@/theme'
 import { AUTO_SAVE_DELAY_MS } from '@/config'
 
 function SetRow({ set, multiplier, baseWeightKg }: { set: WorkoutSet; multiplier?: number | null; baseWeightKg?: number | null }) {
-  const { queueUpdateSet, queueDeleteSet, updateSetLocal } = useWorkoutStore()
-  const dayLoading = useWorkoutStore((s) => s.dayLoading)
+  const { updateSet, deleteSet, isLoading: dayLoading } = useWorkoutStore()
   const [repsInput, setRepsInput] = useState<string>(() => String(set.reps))
   const [weightInput, setWeightInput] = useState<string>(() => String(set.weightKg))
   const theme = useMantineTheme()
@@ -58,17 +57,16 @@ function SetRow({ set, multiplier, baseWeightKg }: { set: WorkoutSet; multiplier
     if (!('reps' in updates) && !('weightKg' in updates)) {
       return false
     }
-    // Queue update (local UI already reflects changes via updateSetLocal in queue helper)
-    queueUpdateSet(set.id, updates)
+    updateSet(set.tempId, updates)
     return true
-  }, [queueUpdateSet, set.id, set.reps, set.weightKg, updateSetLocal])
+  }, [updateSet, set.tempId, set.reps, set.weightKg])
 
   useAutoSave(parsed, async (v) => save(v), AUTO_SAVE_DELAY_MS)
 
   const onDelete = useCallback(async () => {
     if (dayLoading) return
-    queueDeleteSet(set.id)
-  }, [dayLoading, queueDeleteSet, set.id])
+    deleteSet(set.tempId)
+  }, [dayLoading, deleteSet, set.tempId])
 
   return (
     <Paper withBorder radius="md" p={0} style={{ borderColor: surfaces.border, backdropFilter: 'none' }}>
@@ -138,99 +136,12 @@ function SetRow({ set, multiplier, baseWeightKg }: { set: WorkoutSet; multiplier
   )
 }
 
-function RestRow({ rest }: { rest: RestPeriod }) {
-  const { queueUpdateRest, queueDeleteRest } = useWorkoutStore()
-  const dayLoading = useWorkoutStore((s) => s.dayLoading)
-  const [durationInput, setDurationInput] = useState<string>(() => String(rest.durationSeconds))
-  const theme = useMantineTheme()
-  const surfaces = (theme.other?.surfaces as ThemeSurfaces) ?? DEFAULT_SURFACES
-
-  useEffect(() => {
-    setDurationInput(String(rest.durationSeconds))
-  }, [rest.durationSeconds])
-
-  const parsed = useMemo(() => {
-    const trimmed = durationInput.trim()
-    if (trimmed === '') {
-      return { duration: null }
-    }
-    const value = Number(trimmed)
-    if (!Number.isFinite(value)) {
-      return { duration: null }
-    }
-    return { duration: Math.max(0, Math.round(value)) }
-  }, [durationInput])
-
-  const save = useCallback(({ duration }: { duration: number | null }) => {
-    if (duration === null) return false
-    if (duration === rest.durationSeconds) return false
-    queueUpdateRest(rest.id, { durationSeconds: duration })
-    return true
-  }, [queueUpdateRest, rest.durationSeconds, rest.id])
-
-  useAutoSave(parsed, async (v) => save(v), AUTO_SAVE_DELAY_MS)
-
-  const onDelete = useCallback(async () => {
-    if (dayLoading) return
-    queueDeleteRest(rest.id)
-  }, [dayLoading, queueDeleteRest, rest.id])
-
-  const restBackground = theme.colorScheme === 'light' ? 'rgba(56, 189, 248, 0.1)' : 'rgba(56, 189, 248, 0.18)'
-
-  return (
-    <Paper
-      withBorder
-      radius="md"
-      p={0}
-      style={{ borderColor: surfaces.border, backdropFilter: 'none', background: restBackground }}
-    >
-      <Group justify="space-between" align="center" wrap="nowrap" gap="sm">
-        <Group
-          gap="sm"
-          wrap="nowrap"
-          style={{ flex: 1, minWidth: 0, padding: theme.spacing.sm }}
-        >
-          <Group gap="xs" align="center" wrap="nowrap" w={200}>
-            <TextInput
-              type="number"
-              value={durationInput}
-              min={0}
-              step={5}
-              disabled={dayLoading}
-              onChange={(e) => setDurationInput(e.currentTarget.value)}
-              size="sm"
-              radius="md"
-              variant="filled"
-              placeholder="Rest"
-              style={{ flex: 1 }}
-            />
-            <Text size="sm" c="dimmed">
-              secs
-            </Text>
-          </Group>
-        </Group>
-        <div style={{ paddingRight: theme.spacing.sm }}>
-          <Tooltip label="Remove rest" position="top" withArrow>
-            <ActionIcon
-              variant="light"
-              color="red"
-              radius="md"
-              size="lg"
-              onClick={onDelete}
-              aria-label="Delete rest"
-              disabled={dayLoading}
-            >
-              <IconTrash size={18} />
-            </ActionIcon>
-          </Tooltip>
-      </div>
-      </Group>
-    </Paper>
-  )
-}
-
 export default function SetList({ exercise }: { exercise: Exercise }) {
-  const sets = Array.isArray(exercise.sets) ? exercise.sets : []
+  const allSets = useWorkoutStore((s) => s.sets)
+  const sets = useMemo(() => {
+    return allSets.filter(s => s.exerciseId === exercise.tempId).sort((a,b) => a.position - b.position)
+  }, [allSets, exercise.tempId])
+
   const [catalogScaling, setCatalogScaling] = useState<{ multiplier: number; baseWeightKg: number } | null>(null)
 
   useEffect(() => {
@@ -259,30 +170,17 @@ export default function SetList({ exercise }: { exercise: Exercise }) {
 
   const effectiveMultiplier = catalogScaling?.multiplier
   const effectiveBaseWeight = catalogScaling?.baseWeightKg
-  const timeline: ExerciseEntry[] = useMemo(() => {
-    if (Array.isArray(exercise.timeline) && exercise.timeline.length > 0) {
-      return exercise.timeline
-    }
-    return sets.map((set) => ({ kind: 'set' as const, set }))
-  }, [exercise.timeline, sets])
+
   return (
     <Stack gap="xs" mt="xs">
-      {timeline.map((entry) => {
-        if (entry.kind === 'rest' && entry.rest) {
-          return <RestRow key={`rest-${entry.rest.id}`} rest={entry.rest} />
-        }
-        if (entry.kind === 'set' && entry.set) {
-          return (
-            <SetRow
-              key={`set-${entry.set.id}`}
-              set={entry.set}
-              multiplier={effectiveMultiplier}
-              baseWeightKg={effectiveBaseWeight}
-            />
-          )
-        }
-        return null
-      })}
+      {sets.map((set) => (
+        <SetRow
+          key={set.tempId}
+          set={set}
+          multiplier={effectiveMultiplier}
+          baseWeightKg={effectiveBaseWeight}
+        />
+      ))}
     </Stack>
   )
 }

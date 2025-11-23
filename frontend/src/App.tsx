@@ -24,22 +24,17 @@ const MotionBox = motion.create(Box)
 const FALLBACK_ACCENT = 'linear-gradient(135deg, #8f5afc 0%, #5197ff 100%)'
 
 function Home() {
-  const setDay = useWorkoutStore((s) => s.setDay)
   const [authed, setAuthed] = useState(false)
   const [checkingSession, setCheckingSession] = useState(true)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [userId, setUserId] = useState<string | null>(null)
   const [catalogOpen, setCatalogOpen] = useState(false)
   const isMobile = useMediaQuery('(max-width: 48em)')
   const nav = useNavigate()
   const theme = useMantineTheme()
   const { preset, selectPreset, presets } = useThemePreset()
-  const flush = useWorkoutStore((s) => s.flush)
-  const saving = useWorkoutStore((s) => s.saving)
-  const lastSaveMode = useWorkoutStore((s) => s.lastSaveMode)
-  const lastSavedAt = useWorkoutStore((s) => s.lastSavedAt)
-  const opCount = useWorkoutStore((s) => s.opLog.length)
-  const flushInFlight = useWorkoutStore((s) => s.flushInFlight)
+  const { init, cleanup, sync, isSyncing } = useWorkoutStore()
 
   const surfaces = useMemo<ThemeSurfaces>(
     () => (theme.other?.surfaces as ThemeSurfaces) ?? DEFAULT_SURFACES,
@@ -56,41 +51,32 @@ function Home() {
   useEffect(() => {
     api
       .me()
-      .then(() => setAuthed(true))
+      .then((res) => {
+        setAuthed(true)
+        setUserId(res.userId)
+        init(res.userId)
+      })
       .catch(() => setAuthed(false))
       .finally(() => setCheckingSession(false))
-  }, [])
-
-  // Background "cron-like" auto flush: periodically flush queue if there are pending ops
-  useEffect(() => {
-    if (opCount === 0) return
-    const id = window.setInterval(() => {
-      if (!flushInFlight && saving !== 'saving') {
-        void flush('auto')
-      }
-  }, AUTO_SAVE_DELAY_MS) // reuse AUTO_SAVE_DELAY_MS cadence
-    return () => window.clearInterval(id)
-  }, [opCount, flushInFlight, saving, flush])
+    
+    return () => {
+        cleanup()
+    }
+  }, [init, cleanup])
 
   async function onLogin(e: React.FormEvent) {
     e.preventDefault()
     try {
-      await api.login(email, password)
+      const res = await api.login(email, password)
       setAuthed(true)
+      setUserId(res.userId)
+      init(res.userId)
       notifications.show({
         title: 'Welcome back to Lift Logger',
         message: 'Your dashboard is ready to go.',
         color: 'teal',
         icon: <IconLogin size={18} />
       })
-      const today = format(new Date(), 'yyyy-MM-dd')
-      const res = await api.getDayByDate(today, true)
-      if ('day' in (res as any)) {
-        const created = await api.createDay(today)
-        setDay(created)
-      } else {
-        setDay(res as DayWithDetails)
-      }
     } catch {
       notifications.show({
         title: 'Login failed',
@@ -107,7 +93,8 @@ function Home() {
       // ignore
     }
     setAuthed(false)
-    setDay(null)
+    setUserId(null)
+    cleanup()
   }
 
   if (checkingSession) {
@@ -230,10 +217,8 @@ function Home() {
         >
           <HeaderBar
             onBrowseCatalog={() => nav('/catalog')}
-            onSave={() => flush('manual')}
-            saving={saving as any}
-            saveMode={lastSaveMode}
-            lastSavedAt={lastSavedAt}
+            onSave={sync}
+            saving={isSyncing ? 'saving' : 'idle'}
             onLogout={onLogout}
             userLabel={email || 'Account'}
           />

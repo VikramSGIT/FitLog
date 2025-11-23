@@ -6,8 +6,15 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url))
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+      'rxdb/plugins/dexie': fileURLToPath(new URL('./node_modules/rxdb/plugins/storage-dexie/index.mjs', import.meta.url))
     }
+  },
+  optimizeDeps: {
+    include: [
+      'rxdb',
+      'rxjs',
+    ]
   },
   build: {
     minify: 'esbuild',

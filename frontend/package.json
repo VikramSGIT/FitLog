@@ -19,9 +19,12 @@
     "date-fns": "^4.1.0",
     "dayjs": "^1.11.19",
     "framer-motion": "^12.23.24",
+    "pouchdb-adapter-idb": "^9.0.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.26.2",
+    "rxdb": "^16.20.0",
+    "rxjs": "^7.8.2",
     "zustand": "^4.5.2"
   },
   "devDependencies": {

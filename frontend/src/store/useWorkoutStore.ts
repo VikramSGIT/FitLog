@@ -1,1047 +1,409 @@
-import { create } from 'zustand'
-import { api } from '@/api/client'
-import type { DayWithDetails, Exercise, ExerciseEntry, RestPeriod, WorkoutSet } from '@/api/client'
 
-export type SaveMode = 'auto' | 'manual'
+import { create } from 'zustand';
+import { Subscription } from 'rxjs';
+import { getDb } from '@/db/service';
+import { WorkoutDay, Exercise, Set, WorkoutDayDoc } from '@/db/schema';
+import { api, DayWithDetails } from '@/api/client';
+import { v4 as uuidv4 } from 'uuid';
 
-type TimelineEntry = ExerciseEntry
-
-const ensureArray = <T>(value: T[] | undefined | null): T[] => (Array.isArray(value) ? [...value] : [])
-
-const buildTimeline = (sets: WorkoutSet[], rests: RestPeriod[]): TimelineEntry[] => {
-  const restBuckets = new Map<number, RestPeriod[]>()
-  rests.forEach((rest) => {
-    if (!rest) return
-    const pos = Math.max(0, rest.position ?? 0)
-    const bucket = restBuckets.get(pos) ?? []
-    bucket.push(rest)
-    restBuckets.set(pos, bucket)
-  })
-
-  const timeline: TimelineEntry[] = []
-
-  const head = restBuckets.get(0)
-  if (head && head.length > 0) {
-    head.forEach((rp) => timeline.push({ kind: 'rest', rest: rp }))
-    restBuckets.delete(0)
-  }
-
-  const orderedSets = [...sets].sort((a, b) => a.position - b.position)
-
-  orderedSets.forEach((set) => {
-    timeline.push({ kind: 'set', set })
-    const bucket = restBuckets.get(set.position)
-    if (bucket && bucket.length > 0) {
-      bucket.forEach((rp) => timeline.push({ kind: 'rest', rest: rp }))
-      restBuckets.delete(set.position)
-    }
-  })
-
-  if (restBuckets.size > 0) {
-    const leftovers = Array.from(restBuckets.entries()).sort((a, b) => a[0] - b[0])
-    leftovers.forEach(([, items]) => {
-      items.forEach((rp) => timeline.push({ kind: 'rest', rest: rp }))
-    })
-  }
-
-  return timeline
-}
-
-const normalizeExercise = (exercise: Exercise): Exercise => {
-  const sets = ensureArray(exercise.sets)
-  const hasExplicitRests = Object.prototype.hasOwnProperty.call(exercise, 'restPeriods')
-  const explicitRests = hasExplicitRests ? ensureArray(exercise.restPeriods) : undefined
-  const timelineSource = ensureArray(exercise.timeline)
-  const derivedRests =
-    explicitRests !== undefined
-      ? explicitRests
-      : timelineSource
-          .filter((entry): entry is { kind: 'rest'; rest: RestPeriod } => entry?.kind === 'rest' && !!entry.rest)
-          .map((entry) => entry.rest)
-
-  const restSeen = new Set<string>()
-  const restList: RestPeriod[] = []
-  derivedRests.forEach((rp) => {
-    if (!rp) return
-    if (!restSeen.has(rp.id)) {
-      restSeen.add(rp.id)
-      restList.push(rp)
-    }
-  })
-
-  const timeline = buildTimeline(sets, restList)
-
-  return {
-    ...exercise,
-    sets,
-    restPeriods: restList,
-    timeline
-  }
-}
+// Helper to format date strings
+const toDateString = (date: Date): string => date.toISOString().split('T')[0];
 
 export type WorkoutState = {
-  day: DayWithDetails | null
-  dayLoading: boolean
-  saving: 'idle' | 'saving' | 'saved' | 'error'
-  lastSaveMode: SaveMode | null
-  lastSavedAt: number | null
-  autoSaveHandlers: Set<() => Promise<boolean>>
-  // Unified flush function: runs auto-save handlers then flushes opLog
-  flush: (mode?: SaveMode) => Promise<void>
-  // Batched op-log
-  opLog: Array<
-    | { type: 'createExercise'; tempId: string; dayId: string; catalogId: string; position: number; comment?: string; displayName?: string }
-    | { type: 'createSet'; tempId: string; exerciseId: string; position: number; reps: number; weightKg: number; isWarmup?: boolean }
-    | { type: 'updateExercise'; id: string; patch: Partial<{ position: number; comment: string }> }
-    | { type: 'updateSet'; id: string; patch: Partial<{ position: number; reps: number; weightKg: number; isWarmup: boolean }> }
-    | { type: 'reorderExercises'; dayId: string; orderedIds: string[] }
-    | { type: 'reorderSets'; exerciseId: string; orderedIds: string[] }
-    | { type: 'deleteExercise'; id: string }
-    | { type: 'deleteSet'; id: string }
-    | { type: 'createRest'; tempId: string; exerciseId: string; position: number; durationSeconds: number }
-    | { type: 'updateRest'; id: string; patch: Partial<{ position: number; durationSeconds: number }> }
-    | { type: 'deleteRest'; id: string }
-    | { type: 'updateDay'; dayId: string; isRestDay: boolean }
-  >
-  hiddenIds: Set<string>
-  flushInFlight: boolean
-  tempIdCounter: number
-  setDay: (day: DayWithDetails | null) => void
-  setDayLoading: (loading: boolean) => void
-  setSaving: (state: WorkoutState['saving'], mode?: SaveMode) => void
-  registerAutoSave: (handler: () => Promise<boolean>) => () => void
-  flushAutoSaves: (mode?: SaveMode) => Promise<void>
-  // Batch queue helpers
-  queueCreateExercise: (params: { dayId: string; catalogId: string; nameDisplay: string; position?: number; comment?: string }) => string
-  queueCreateSet: (exerciseId: string, params: { position: number; reps: number; weightKg: number; isWarmup?: boolean }) => string
-  queueUpdateExercise: (id: string, patch: Partial<{ position: number; comment: string }>) => void
-  queueUpdateSet: (id: string, patch: Partial<{ position: number; reps: number; weightKg: number; isWarmup: boolean }>) => void
-  queueReorderExercises: (dayId: string, orderedIds: string[]) => void
-  queueReorderSets: (exerciseId: string, orderedIds: string[]) => void
-  queueDeleteExercise: (id: string) => void
-  queueDeleteSet: (id: string) => void
-  queueCreateRest: (exerciseId: string, params: { position: number; durationSeconds: number }) => string
-  queueUpdateRest: (id: string, patch: Partial<{ position: number; durationSeconds: number }>) => void
-  queueDeleteRest: (id: string) => void
-  queueUpdateDay: (dayId: string, isRestDay: boolean) => void
-  flushOpLog: () => Promise<boolean>
-  // Local state update helpers
-  addExerciseLocal: (ex: Exercise) => void
-  updateExerciseLocal: (id: string, patch: Partial<Exercise>) => void
-  removeExerciseLocal: (id: string) => void
-  addSetLocal: (exerciseId: string, s: WorkoutSet) => void
-  updateSetLocal: (id: string, patch: Partial<WorkoutSet>) => void
-  removeSetLocal: (id: string) => void
-  addRestLocal: (exerciseId: string, rest: RestPeriod) => void
-  updateRestLocal: (id: string, patch: Partial<RestPeriod>) => void
-  removeRestLocal: (id: string) => void
-}
+  // State
+  activeDay: WorkoutDayDoc | null;
+  exercises: Exercise[];
+  sets: Set[];
+  activeDaySub: Subscription | null;
+  selectedDate: string;
+  isLoading: boolean;
+  isSyncing: boolean;
+  userId: string | null; // Assuming we can get the user ID
+
+  // Actions
+  init: (userId: string) => void;
+  loadDay: (date: string) => Promise<void>;
+  addExercise: (catalogId: string, name: string) => Promise<string>;
+  updateExercise: (tempId: string, patch: Partial<Exercise>) => Promise<void>;
+  deleteExercise: (tempId: string) => Promise<void>;
+  addSet: (exerciseTempId: string) => Promise<void>;
+  updateSet: (tempId: string, patch: Partial<Set>) => Promise<void>;
+  deleteSet: (tempId: string) => Promise<void>;
+  sync: () => Promise<void>;
+  cleanup: () => void;
+};
 
 export const useWorkoutStore = create<WorkoutState>((set, get) => ({
-  day: null,
-  dayLoading: false,
-  saving: 'idle',
-  lastSaveMode: null,
-  lastSavedAt: null,
-  autoSaveHandlers: new Set(),
-  opLog: [],
-  hiddenIds: new Set(),
-  flushInFlight: false,
-  tempIdCounter: 1,
-  setDay: (day) => {
-    if (!day) {
-      set({ day: null, dayLoading: false, opLog: [], hiddenIds: new Set() })
-      return
-    }
-    const normalized = {
-      ...day,
-      exercises: Array.isArray(day.exercises) ? day.exercises.map((ex) => normalizeExercise(ex)) : []
-    }
-    set({ day: normalized, dayLoading: false, opLog: [], hiddenIds: new Set() })
-    // Capture epoch from server to anchor hydration
-    ;(async () => {
-      try {
-        const res = await api.getSaveEpoch()
-        if (res && typeof res.serverEpoch === 'number' && !Number.isNaN(res.serverEpoch)) {
-          localStorage.setItem('saveEpoch', String(res.serverEpoch))
-        }
-      } catch {}
-    })()
-    // Hydrate persisted op-log for this day if present and not stale
-    try {
-      const state = get()
-      const key = `oplog:v1:${normalized.id}`
-      const saved = localStorage.getItem(key)
-      if (saved) {
-        const parsed = JSON.parse(saved) as { dayId: string; baseEpoch?: number; ops?: WorkoutState['opLog'] }
-        const currentEpoch = Number(localStorage.getItem('saveEpoch') || '0')
-        if (parsed && parsed.dayId === normalized.id && Array.isArray(parsed.ops)) {
-          if (!parsed.baseEpoch || parsed.baseEpoch >= currentEpoch) {
-            // restore and replay locally to reflect pending changes
-            if (state.opLog.length === 0) {
-              set({ opLog: parsed.ops })
-            }
-            const replay = (ops: WorkoutState['opLog']) => {
-              ops.forEach((op) => {
-                switch (op.type) {
-                  case 'updateDay':
-                    set((st) => ({ day: st.day ? { ...st.day, isRestDay: op.isRestDay } : st.day }))
-                    break;
-                  case 'createExercise': {
-                    const dcur = get().day
-                    const exists = dcur?.exercises?.some((e) => e.id === op.tempId)
-                    if (exists) break
-                    const ex: Exercise = {
-                      id: op.tempId,
-                      dayId: op.dayId,
-                      catalogId: op.catalogId,
-                      name: op.displayName || 'Pending exercise',
-                      position: op.position,
-                      comment: op.comment,
-                      sets: []
-                    }
-                    get().addExerciseLocal(ex)
-                    break;
-                  }
-                  case 'deleteExercise':
-                    get().removeExerciseLocal(op.id)
-                    break;
-                  case 'updateExercise':
-                    get().updateExerciseLocal(op.id, op.patch as any)
-                    break;
-                  case 'reorderExercises': {
-                    const d2 = get().day
-                    if (d2 && d2.id === op.dayId) {
-                      const idToPos = new Map<string, number>()
-                      op.orderedIds.forEach((id, idx) => idToPos.set(id, idx))
-                      const next = d2.exercises.map((e) => ({ ...e, position: idToPos.get(e.id) ?? e.position }))
-                      set({ day: { ...d2, exercises: next.sort((a, b) => a.position - b.position) } })
-                    }
-                    break;
-                  }
-                  case 'createSet': {
-                    const d2 = get().day
-                    if (!d2) break
-                    const ex = d2.exercises.find((e) => e.id === op.exerciseId)
-                    const already = ex?.sets?.some((s) => s.id === op.tempId)
-                    if (already) break
-                    const s: WorkoutSet = {
-                      id: op.tempId,
-                      exerciseId: op.exerciseId,
-                      userId: '',
-                      workoutDate: d2.workoutDate,
-                      position: op.position,
-                      reps: op.reps,
-                      weightKg: op.weightKg,
-                      isWarmup: Boolean(op.isWarmup),
-                      volumeKg: op.reps * op.weightKg
-                    }
-                    get().addSetLocal(op.exerciseId, s)
-                    break;
-                  }
-                  case 'deleteSet':
-                    get().removeSetLocal(op.id)
-                    break;
-                  case 'updateSet':
-                    get().updateSetLocal(op.id, op.patch as any)
-                    break;
-                  case 'reorderSets': {
-                    const d2 = get().day
-                    if (!d2) break
-                    const ex = d2.exercises.find((e) => e.id === op.exerciseId)
-                    if (!ex) break
-                    const idToPos = new Map<string, number>()
-                    op.orderedIds.forEach((id, idx) => idToPos.set(id, idx))
-                    const updated = ex.sets.map((s) => ({ ...s, position: idToPos.get(s.id) ?? s.position }))
-                    get().updateExerciseLocal(op.exerciseId, { sets: updated.sort((a, b) => a.position - b.position) } as any)
-                    break;
-                  }
-                  case 'createRest': {
-                    const d2 = get().day
-                    const ex = d2?.exercises.find((e) => e.id === op.exerciseId)
-                    const rExists = (ex as any)?.restPeriods?.some((rp: any) => rp.id === op.tempId)
-                    if (rExists) break
-                    const r: RestPeriod = {
-                      id: op.tempId,
-                      exerciseId: op.exerciseId,
-                      position: op.position,
-                      durationSeconds: op.durationSeconds,
-                      createdAt: new Date().toISOString(),
-                      updatedAt: new Date().toISOString()
-                    } as any
-                    get().addRestLocal(op.exerciseId, r)
-                    break;
-                  }
-                  case 'deleteRest':
-                    get().removeRestLocal(op.id)
-                    break;
-                  case 'updateRest':
-                    get().updateRestLocal(op.id, op.patch as any)
-                    break;
-                  default:
-                    break;
-                }
-              })
-            }
-            replay(parsed.ops)
-          } else {
-            // stale queue
-            localStorage.removeItem(key)
-          }
-        }
-      } else {
-        // No persisted ops; if there is an in-memory queue, replay it now so server state doesn't wipe UI effects
-        if (state.opLog.length > 0) {
-          const opsCopy = [...state.opLog]
-          const replay = (ops: WorkoutState['opLog']) => {
-            ops.forEach((op) => {
-              switch (op.type) {
-                case 'updateDay':
-                  set((st) => ({ day: st.day ? { ...st.day, isRestDay: op.isRestDay } : st.day }))
-                  break;
-                case 'createExercise': {
-                  const dcur = get().day
-                  const exists = dcur?.exercises?.some((e) => e.id === op.tempId)
-                  if (exists) break
-                  const ex: Exercise = {
-                    id: op.tempId,
-                    dayId: op.dayId,
-                    catalogId: op.catalogId,
-                    name: op.displayName || 'Pending exercise',
-                    position: op.position,
-                    comment: op.comment,
-                    sets: []
-                  }
-                  get().addExerciseLocal(ex)
-                  break;
-                }
-                case 'deleteExercise':
-                  get().removeExerciseLocal(op.id)
-                  break;
-                case 'updateExercise':
-                  get().updateExerciseLocal(op.id, op.patch as any)
-                  break;
-                case 'reorderExercises': {
-                  const d2 = get().day
-                  if (d2 && d2.id === op.dayId) {
-                    const idToPos = new Map<string, number>()
-                    op.orderedIds.forEach((id, idx) => idToPos.set(id, idx))
-                    const next = d2.exercises.map((e) => ({ ...e, position: idToPos.get(e.id) ?? e.position }))
-                    set({ day: { ...d2, exercises: next.sort((a, b) => a.position - b.position) } })
-                  }
-                  break;
-                }
-                case 'createSet': {
-                  const d2 = get().day
-                  if (!d2) break
-                  const ex = d2.exercises.find((e) => e.id === op.exerciseId)
-                  const already = ex?.sets?.some((s) => s.id === op.tempId)
-                  if (already) break
-                  const s: WorkoutSet = {
-                    id: op.tempId,
-                    exerciseId: op.exerciseId,
-                    userId: '',
-                    workoutDate: d2.workoutDate,
-                    position: op.position,
-                    reps: op.reps,
-                    weightKg: op.weightKg,
-                    isWarmup: Boolean(op.isWarmup),
-                    volumeKg: op.reps * op.weightKg
-                  }
-                  get().addSetLocal(op.exerciseId, s)
-                  break;
-                }
-                case 'deleteSet':
-                  get().removeSetLocal(op.id)
-                  break;
-                case 'updateSet':
-                  get().updateSetLocal(op.id, op.patch as any)
-                  break;
-                case 'reorderSets': {
-                  const d2 = get().day
-                  if (!d2) break
-                  const ex = d2.exercises.find((e) => e.id === op.exerciseId)
-                  if (!ex) break
-                  const idToPos = new Map<string, number>()
-                  op.orderedIds.forEach((id, idx) => idToPos.set(id, idx))
-                  const updated = ex.sets.map((s) => ({ ...s, position: idToPos.get(s.id) ?? s.position }))
-                  get().updateExerciseLocal(op.exerciseId, { sets: updated.sort((a, b) => a.position - b.position) } as any)
-                  break;
-                }
-                case 'createRest': {
-                  const d2 = get().day
-                  const ex = d2?.exercises.find((e) => e.id === op.exerciseId)
-                  const rExists = (ex as any)?.restPeriods?.some((rp: any) => rp.id === op.tempId)
-                  if (rExists) break
-                  const r: RestPeriod = {
-                    id: op.tempId,
-                    exerciseId: op.exerciseId,
-                    position: op.position,
-                    durationSeconds: op.durationSeconds,
-                    createdAt: new Date().toISOString(),
-                    updatedAt: new Date().toISOString()
-                  } as any
-                  get().addRestLocal(op.exerciseId, r)
-                  break;
-                }
-                case 'deleteRest':
-                  get().removeRestLocal(op.id)
-                  break;
-                case 'updateRest':
-                  get().updateRestLocal(op.id, op.patch as any)
-                  break;
-                default:
-                  break;
-              }
-            })
-          }
-          replay(opsCopy)
-        }
-      }
-    } catch {}
-  },
-  setDayLoading: (loading) => set({ dayLoading: loading }),
-  setSaving: (state, mode) =>
-    set((current) => {
-      const partial: Partial<WorkoutState> = { saving: state }
-      if (state === 'saved') {
-        partial.lastSavedAt = Date.now()
-        partial.lastSaveMode = mode ?? current.lastSaveMode
-      } else if (mode) {
-        partial.lastSaveMode = mode
-      }
-      return partial
-    }),
-  registerAutoSave: (handler) => {
-    const handlers = get().autoSaveHandlers
-    handlers.add(handler)
-    return () => {
-      handlers.delete(handler)
-    }
-  },
-  // Unified flush used by both auto interval and manual button
-  flush: async (mode: SaveMode = 'auto') => {
-    await get().flushAutoSaves(mode)
-  },
-  flushAutoSaves: async (mode: SaveMode = 'manual') => {
-    const handlers = Array.from(get().autoSaveHandlers)
-    const setSaving = get().setSaving
-    // For manual saves: run auto-save handlers first to enqueue edits, then flush the opLog
-    setSaving('saving', mode)
-    try {
-      let didSaveAny = false
-      // 1) Run all registered auto-save handlers to queue any pending edits (e.g., set updates)
-      for (const fn of handlers) {
-        const did = await fn()
-        if (did) didSaveAny = true
-      }
-      // 2) Flush the op-log once after handlers have queued their ops
-      const flushedOps = await get().flushOpLog()
-      didSaveAny = didSaveAny || flushedOps
-      setSaving(didSaveAny ? 'saved' : 'idle', mode)
-    } catch (err) {
-      console.error(err)
-      setSaving('error', mode)
-    }
-  },
-  // Queue helpers
-  queueCreateExercise: ({ dayId, catalogId, nameDisplay, position, comment }) => {
-    const d = get().day
-    if (!d || d.id !== dayId) return ''
-    const tempId = `temp-ex-${get().tempIdCounter}`
-    set((current) => ({ tempIdCounter: current.tempIdCounter + 1 }))
-    const pos = typeof position === 'number' ? position : d.exercises.length
-    // Local UI insert
-    const ex: Exercise = {
-      id: tempId,
-      dayId,
-      catalogId,
-      name: nameDisplay,
-      position: pos,
-      comment: comment ?? undefined,
-      sets: []
-    }
-    get().addExerciseLocal(ex)
-    // Log op
-    set((state) => {
-      const nextLog = [
-        ...state.opLog,
-        { type: 'createExercise', tempId, dayId, catalogId, position: pos, comment, displayName: nameDisplay }
-      ] as WorkoutState['opLog']
-      // persist
-      try {
-        if (d?.id) {
-          const key = `oplog:v1:${d.id}`
-          const baseEpoch = Number(localStorage.getItem('saveEpoch') || '0')
-          localStorage.setItem(key, JSON.stringify({ dayId: d.id, baseEpoch, createdAt: Date.now(), lastPersistedAt: Date.now(), ops: nextLog }))
-        }
-      } catch {}
-      return { opLog: nextLog }
-    })
-    return tempId
-  },
-  queueCreateSet: (exerciseId, { position, reps, weightKg, isWarmup }) => {
-    const tempId = `temp-set-${get().tempIdCounter}`
-    set((current) => ({ tempIdCounter: current.tempIdCounter + 1 }))
-    const d = get().day
-    if (d) {
-      const setObj: WorkoutSet = {
-        id: tempId,
-        exerciseId,
-        userId: '', // unknown locally
-        workoutDate: d.workoutDate,
-        position,
-        reps,
-        weightKg,
-        isWarmup: Boolean(isWarmup),
-        volumeKg: reps * weightKg
-      }
-      get().addSetLocal(exerciseId, setObj)
-    }
-    set((state) => {
-      const nextLog = [
-        ...state.opLog,
-        { type: 'createSet', tempId, exerciseId, position, reps, weightKg, isWarmup: Boolean(isWarmup) }
-      ] as WorkoutState['opLog']
-      try {
-        const d2 = get().day
-        if (d2?.id) {
-          const key = `oplog:v1:${d2.id}`
-          const baseEpoch = Number(localStorage.getItem('saveEpoch') || '0')
-          localStorage.setItem(key, JSON.stringify({ dayId: d2.id, baseEpoch, createdAt: Date.now(), lastPersistedAt: Date.now(), ops: nextLog }))
-        }
-      } catch {}
-      return { opLog: nextLog }
-    })
-    return tempId
-  },
-  queueUpdateExercise: (id, patch) => {
-    // UI reflect change immediately
-    get().updateExerciseLocal(id, patch as any)
-    set((state) => {
-      const nextLog = [...state.opLog, { type: 'updateExercise', id, patch }] as WorkoutState['opLog']
-      try {
-        const d = get().day
-        if (d?.id) {
-          const key = `oplog:v1:${d.id}`
-          const baseEpoch = Number(localStorage.getItem('saveEpoch') || '0')
-          localStorage.setItem(key, JSON.stringify({ dayId: d.id, baseEpoch, createdAt: Date.now(), lastPersistedAt: Date.now(), ops: nextLog }))
-        }
-      } catch {}
-      return { opLog: nextLog }
-    })
-  },
-  queueUpdateSet: (id, patch) => {
-    get().updateSetLocal(id, patch as any)
-    set((state) => {
-      const nextLog = [...state.opLog, { type: 'updateSet', id, patch }] as WorkoutState['opLog']
-      try {
-        const d = get().day
-        if (d?.id) {
-          const key = `oplog:v1:${d.id}`
-          const baseEpoch = Number(localStorage.getItem('saveEpoch') || '0')
-          localStorage.setItem(key, JSON.stringify({ dayId: d.id, baseEpoch, createdAt: Date.now(), lastPersistedAt: Date.now(), ops: nextLog }))
-        }
-      } catch {}
-      return { opLog: nextLog }
-    })
-  },
-  queueReorderExercises: (dayId, orderedIds) => {
-    // Update local positions
-    const d = get().day
-    if (d && d.id === dayId) {
-      const idToPos = new Map<string, number>()
-      orderedIds.forEach((id, idx) => idToPos.set(id, idx))
-      d.exercises.forEach((e) => {
-        const next = idToPos.get(e.id)
-        if (typeof next === 'number') {
-          e.position = next
-        }
-      })
-      set({ day: { ...d, exercises: [...d.exercises].sort((a, b) => a.position - b.position) } })
-    }
-    set((state) => {
-      const nextLog = [...state.opLog, { type: 'reorderExercises', dayId, orderedIds }] as WorkoutState['opLog']
-      try {
-        const d = get().day
-        if (d?.id) {
-          const key = `oplog:v1:${d.id}`
-          const baseEpoch = Number(localStorage.getItem('saveEpoch') || '0')
-          localStorage.setItem(key, JSON.stringify({ dayId: d.id, baseEpoch, createdAt: Date.now(), lastPersistedAt: Date.now(), ops: nextLog }))
-        }
-      } catch {}
-      return { opLog: nextLog }
-    })
-  },
-  queueReorderSets: (exerciseId, orderedIds) => {
-    const d = get().day
-    if (d) {
-      const ex = d.exercises.find((e) => e.id === exerciseId)
-      if (ex) {
-        const idToPos = new Map<string, number>()
-        orderedIds.forEach((id, idx) => idToPos.set(id, idx))
-        ex.sets.forEach((s) => {
-          const next = idToPos.get(s.id)
-          if (typeof next === 'number') s.position = next
-        })
-        get().updateExerciseLocal(exerciseId, { sets: [...ex.sets].sort((a, b) => a.position - b.position) } as any)
-      }
-    }
-    set((state) => {
-      const nextLog = [...state.opLog, { type: 'reorderSets', exerciseId, orderedIds }] as WorkoutState['opLog']
-      try {
-        const d = get().day
-        if (d?.id) {
-          const key = `oplog:v1:${d.id}`
-          const baseEpoch = Number(localStorage.getItem('saveEpoch') || '0')
-          localStorage.setItem(key, JSON.stringify({ dayId: d.id, baseEpoch, createdAt: Date.now(), lastPersistedAt: Date.now(), ops: nextLog }))
-        }
-      } catch {}
-      return { opLog: nextLog }
-    })
-  },
-  queueDeleteExercise: (id) => {
-    // Remove from UI immediately but always push delete op (temp or persisted)
-    get().removeExerciseLocal(id)
-    set((state) => {
-      const nextLog = [...state.opLog, { type: 'deleteExercise', id }] as WorkoutState['opLog']
-      const nextHidden = new Set<string>([...state.hiddenIds, id])
-      try {
-        const d = get().day
-        if (d?.id) {
-          const key = `oplog:v1:${d.id}`
-          const baseEpoch = Number(localStorage.getItem('saveEpoch') || '0')
-          localStorage.setItem(key, JSON.stringify({ dayId: d.id, baseEpoch, createdAt: Date.now(), lastPersistedAt: Date.now(), ops: nextLog }))
-        }
-      } catch {}
-      return { opLog: nextLog, hiddenIds: nextHidden }
-    })
-  },
-  queueDeleteSet: (id) => {
-    // Remove from UI immediately but always push delete op (temp or persisted)
-    get().removeSetLocal(id)
-    set((state) => {
-      const nextLog = [...state.opLog, { type: 'deleteSet', id }] as WorkoutState['opLog']
-      const nextHidden = new Set<string>([...state.hiddenIds, id])
-      try {
-        const d = get().day
-        if (d?.id) {
-          const key = `oplog:v1:${d.id}`
-          const baseEpoch = Number(localStorage.getItem('saveEpoch') || '0')
-          localStorage.setItem(key, JSON.stringify({ dayId: d.id, baseEpoch, createdAt: Date.now(), lastPersistedAt: Date.now(), ops: nextLog }))
-        }
-      } catch {}
-      return { opLog: nextLog, hiddenIds: nextHidden }
-    })
-  },
-  queueCreateRest: (exerciseId, { position, durationSeconds }) => {
-    const tempId = `temp-rest-${get().tempIdCounter}`
-    set((current) => ({ tempIdCounter: current.tempIdCounter + 1 }))
-    const d = get().day
-    if (d) {
-      const restObj: RestPeriod = {
-        id: tempId,
-        exerciseId,
-        position,
-        durationSeconds,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      } as any
-      get().addRestLocal(exerciseId, restObj)
-    }
-    set((state) => {
-      const nextLog = [...state.opLog, { type: 'createRest', tempId, exerciseId, position, durationSeconds }] as WorkoutState['opLog']
-      try {
-        const d2 = get().day
-        if (d2?.id) {
-          const key = `oplog:v1:${d2.id}`
-          const baseEpoch = Number(localStorage.getItem('saveEpoch') || '0')
-          localStorage.setItem(key, JSON.stringify({ dayId: d2.id, baseEpoch, createdAt: Date.now(), lastPersistedAt: Date.now(), ops: nextLog }))
-        }
-      } catch {}
-      return { opLog: nextLog }
-    })
-    return tempId
-  },
-  queueUpdateRest: (id, patch) => {
-    get().updateRestLocal(id, patch as any)
-    set((state) => {
-      const nextLog = [...state.opLog, { type: 'updateRest', id, patch }] as WorkoutState['opLog']
-      try {
-        const d = get().day
-        if (d?.id) {
-          const key = `oplog:v1:${d.id}`
-          const baseEpoch = Number(localStorage.getItem('saveEpoch') || '0')
-          localStorage.setItem(key, JSON.stringify({ dayId: d.id, baseEpoch, createdAt: Date.now(), lastPersistedAt: Date.now(), ops: nextLog }))
-        }
-      } catch {}
-      return { opLog: nextLog }
-    })
-  },
-  queueDeleteRest: (id) => {
-    // Remove from UI immediately but always push delete op (temp or persisted)
-    get().removeRestLocal(id)
-    set((state) => {
-      const nextLog = [...state.opLog, { type: 'deleteRest', id }] as WorkoutState['opLog']
-      const nextHidden = new Set<string>([...state.hiddenIds, id])
-      try {
-        const d = get().day
-        if (d?.id) {
-          const key = `oplog:v1:${d.id}`
-          const baseEpoch = Number(localStorage.getItem('saveEpoch') || '0')
-          localStorage.setItem(key, JSON.stringify({ dayId: d.id, baseEpoch, createdAt: Date.now(), lastPersistedAt: Date.now(), ops: nextLog }))
-        }
-      } catch {}
-      return { opLog: nextLog, hiddenIds: nextHidden }
-    })
-  },
-  queueUpdateDay: (dayId, isRestDay) => {
-    const d = get().day
-    if (d && d.id === dayId) {
-      set({ day: { ...d, isRestDay } })
-    }
-    set((state) => {
-      const nextLog = [...state.opLog, { type: 'updateDay', dayId, isRestDay }] as WorkoutState['opLog']
-      try {
-        const d2 = get().day
-        if (d2?.id) {
-          const key = `oplog:v1:${d2.id}`
-          const baseEpoch = Number(localStorage.getItem('saveEpoch') || '0')
-          localStorage.setItem(key, JSON.stringify({ dayId: d2.id, baseEpoch, createdAt: Date.now(), lastPersistedAt: Date.now(), ops: nextLog }))
-        }
-      } catch {}
-      return { opLog: nextLog }
-    })
-  },
-  flushOpLog: async () => {
-    const state = get()
-    if (state.flushInFlight) return false
-    // Collect ops from in-memory queue (current day) + all persisted per-day queues in localStorage
-    const currentDayId = state.day?.id
-    const currentOps = state.opLog
-    let aggregatedOps: WorkoutState['opLog'] = []
-    if (currentOps && currentOps.length > 0) {
-      aggregatedOps = [...currentOps]
-    }
-    // Also pull in any persisted op-logs for other days so a single flush pushes everything
-    try {
-      const currentEpoch = Number(localStorage.getItem('saveEpoch') || '0')
-      const keysToDrop: string[] = []
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i)
-        if (!key || !key.startsWith('oplog:v1:')) continue
-        const raw = localStorage.getItem(key)
-        if (!raw) continue
-        try {
-          const parsed = JSON.parse(raw) as {
-            dayId: string
-            baseEpoch?: number
-            ops?: WorkoutState['opLog']
-          }
-          if (!parsed || !Array.isArray(parsed.ops) || !parsed.dayId) continue
-          // If this is the current day and we already have an in-memory queue, prefer in-memory to avoid duplicates
-          if (currentDayId && parsed.dayId === currentDayId && currentOps && currentOps.length > 0) {
-            continue
-          }
-          if (parsed.baseEpoch && parsed.baseEpoch < currentEpoch) {
-            // Stale queue: drop it
-            keysToDrop.push(key)
-            continue
-          }
-          aggregatedOps = (aggregatedOps as WorkoutState['opLog']).concat(parsed.ops)
-        } catch {
-          // Bad JSON, mark for removal
-          keysToDrop.push(key)
-        }
-      }
-      // Best-effort cleanup of stale/bad keys discovered above
-      keysToDrop.forEach((k) => {
-        try {
-          localStorage.removeItem(k)
-        } catch {}
-      })
-    } catch {}
-    if (!aggregatedOps || aggregatedOps.length === 0) {
-      return false
-    }
-    set({ flushInFlight: true })
-    try {
-      const withTempRefs = aggregatedOps.map((op) => {
-        const addPrefix = (id: string) => (id && id.startsWith('temp-') ? `temp:${id}` : id)
-        if (op.type === 'createExercise') return op
-        if (op.type === 'createSet') {
-          return { ...op, exerciseId: addPrefix(op.exerciseId) }
-        }
-        if (op.type === 'createRest') {
-          return { ...op, exerciseId: addPrefix(op.exerciseId) }
-        }
-        if (op.type === 'updateExercise') {
-          return { ...op, id: addPrefix(op.id) }
-        }
-        if (op.type === 'updateSet') {
-          return { ...op, id: addPrefix(op.id) }
-        }
-        if (op.type === 'updateRest') {
-          return { ...op, id: addPrefix(op.id) }
-        }
-        if (op.type === 'reorderExercises') {
-          return { ...op, orderedIds: op.orderedIds.map(addPrefix) }
-        }
-        if (op.type === 'reorderSets') {
-          return { ...op, exerciseId: addPrefix(op.exerciseId), orderedIds: op.orderedIds.map(addPrefix) }
-        }
-        if (op.type === 'deleteExercise') {
-          return { ...op, id: addPrefix(op.id) }
-        }
-        if (op.type === 'deleteSet') {
-          return { ...op, id: addPrefix(op.id) }
-        }
-        if (op.type === 'deleteRest') {
-          return { ...op, id: addPrefix(op.id) }
-        }
-        if (op.type === 'updateDay') {
-          return op
-        }
-        return op
-      })
-      const res = await api.saveBatch(
-        withTempRefs as any,
-        crypto.randomUUID?.() || `${Date.now()}`,
-        Number(localStorage.getItem('saveEpoch') || '0')
-      )
-      // Apply mapping for temp IDs (only current day is in memory; other days will be re-fetched from server)
-      const exerciseMap = new Map<string, string>()
-      const setMap = new Map<string, string>()
-      const restMap = new Map<string, string>()
-      res.mapping?.exercises?.forEach((m) => exerciseMap.set(m.tempId, m.id))
-      res.mapping?.sets?.forEach((m) => setMap.set(m.tempId, m.id))
-      res.mapping?.rests?.forEach((m) => restMap.set(m.tempId, m.id))
-      // Replace temp ids in local state for the currently loaded day
-      const d = get().day
-      if (d) {
-        const nextExercises = d.exercises.map((ex) => {
-          const mappedId = exerciseMap.get(ex.id)
-          if (mappedId) {
-            return normalizeExercise({ ...ex, id: mappedId, sets: ex.sets.map((s) => ({ ...s, exerciseId: mappedId })) })
-          }
-          return ex
-        })
-        // Update sets and rest periods
-        nextExercises.forEach((ex, idx) => {
-          const updatedSets = ex.sets.map((s) => {
-            const mappedSetId = setMap.get(s.id)
-            if (mappedSetId) {
-              return { ...s, id: mappedSetId, exerciseId: ex.id }
-            }
-            return s
-          })
-          const updatedRests = ensureArray(ex.restPeriods).map((rp) => {
-            const mappedId = restMap.get(rp.id)
-            return mappedId ? { ...rp, id: mappedId } : rp
-          })
-          nextExercises[idx] = normalizeExercise({ ...ex, sets: updatedSets, restPeriods: updatedRests })
-        })
-        set({ day: { ...d, exercises: nextExercises } })
-      }
-      // Clear op log in memory and all persisted queues on success
-      set({ opLog: [], hiddenIds: new Set() })
-      try {
-        const keysToRemove: string[] = []
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i)
-          if (key && key.startsWith('oplog:v1:')) {
-            keysToRemove.push(key)
-          }
-        }
-        keysToRemove.forEach((k) => {
-          try {
-            localStorage.removeItem(k)
-          } catch {}
-        })
-      } catch {}
-      // Persist server epoch for future batches (best-effort)
-      if (typeof res.serverEpoch === 'number' && !Number.isNaN(res.serverEpoch)) {
-        localStorage.setItem('saveEpoch', String(res.serverEpoch))
-      }
-      return true
-    } catch (e) {
-      console.error('flushOpLog failed', e)
-      const code = (e as any)?.code
-      if (code === 'stale_epoch') {
-        // Invalidate local queues and reload to server truth
-        try {
-          const keysToRemove: string[] = []
-          for (let i = 0; i < localStorage.length; i++) {
-            const key = localStorage.key(i)
-            if (key && key.startsWith('oplog:v1:')) {
-              keysToRemove.push(key)
-            }
-          }
-          keysToRemove.forEach((k) => {
-            try {
-              localStorage.removeItem(k)
-            } catch {}
-          })
-        } catch {}
-        set({ opLog: [] })
-        // Hard reload to ensure full resync
-        if (typeof window !== 'undefined' && window.location) {
-          window.location.reload()
-        }
-      }
-      return false
-    } finally {
-      set({ flushInFlight: false })
-    }
-  },
-  addExerciseLocal: (ex) => {
-    const d = get().day
-    if (!d) return
-    const normalizedExercise = normalizeExercise(ex)
-    set({
-      day: {
-        ...d,
-        exercises: [...d.exercises, normalizedExercise]
-      }
-    })
-  },
-  updateExerciseLocal: (id, patch) => {
-    const d = get().day
-    if (!d) return
-    set({
-      day: {
-        ...d,
-        exercises: d.exercises.map((e) =>
-          e.id === id ? normalizeExercise({ ...e, ...patch }) : e
-        )
-      }
-    })
-  },
-  removeExerciseLocal: (id) => {
-    const d = get().day
-    if (!d) return
-    set({ day: { ...d, exercises: d.exercises.filter((e) => e.id !== id) } })
-  },
-  addSetLocal: (exerciseId, s) => {
-    const d = get().day
-    if (!d) return
-    set({
-      day: {
-        ...d,
-        exercises: d.exercises.map((e) => {
-          if (e.id !== exerciseId) return e
-          const sets = ensureArray(e.sets)
-          const restPeriods = ensureArray(e.restPeriods)
-          return normalizeExercise({
-            ...e,
-            sets: [...sets, s],
-            restPeriods
-          })
-        })
-      }
-    })
-  },
-  updateSetLocal: (id, patch) => {
-    const d = get().day
-    if (!d) return
-    set({
-      day: {
-        ...d,
-        exercises: d.exercises.map((e) => {
-          const sets = ensureArray(e.sets)
-          let mutated = false
-          const updatedSets = sets.map((set) => {
-            if (set.id !== id) return set
-            mutated = true
-            return { ...set, ...patch }
-          })
-          if (!mutated) return e
-          return normalizeExercise({
-          ...e,
-            sets: updatedSets,
-            restPeriods: ensureArray(e.restPeriods)
-          })
-        })
-      }
-    })
-  },
-  removeSetLocal: (id) => {
-    const d = get().day
-    if (!d) return
-    set({
-      day: {
-        ...d,
-        exercises: d.exercises.map((e) => {
-          const sets = ensureArray(e.sets)
-          const filtered = sets.filter((set) => set.id !== id)
-          if (filtered.length === sets.length) return e
-          return normalizeExercise({
-            ...e,
-            sets: filtered,
-            restPeriods: ensureArray(e.restPeriods)
-          })
-        })
-      }
-    })
-  },
-  addRestLocal: (exerciseId, rest) => {
-    const d = get().day
-    if (!d) return
-    set({
-      day: {
-        ...d,
-        exercises: d.exercises.map((e) => {
-          if (e.id !== exerciseId) return e
-          const rests = ensureArray(e.restPeriods).filter((rp) => rp.id !== rest.id)
-          rests.push(rest)
-          return normalizeExercise({
-            ...e,
-            restPeriods: rests,
-            sets: ensureArray(e.sets)
-          })
-        })
-      }
-    })
-  },
-  updateRestLocal: (id, patch) => {
-    const d = get().day
-    if (!d) return
-    set({
-      day: {
-        ...d,
-        exercises: d.exercises.map((e) => {
-          const rests = ensureArray(e.restPeriods)
-          const index = rests.findIndex((rp) => rp.id === id)
-          if (index === -1) return e
-          const updated = [...rests]
-          updated[index] = { ...updated[index], ...patch }
-          return normalizeExercise({
-            ...e,
-            restPeriods: updated,
-            sets: ensureArray(e.sets)
-          })
-        })
-      }
-    })
-  },
-  removeRestLocal: (id) => {
-    const d = get().day
-    if (!d) return
-    set({
-      day: {
-        ...d,
-        exercises: d.exercises.map((e) => {
-          const rests = ensureArray(e.restPeriods)
-          const filtered = rests.filter((rp) => rp.id !== id)
-          if (filtered.length === rests.length) return e
-          return normalizeExercise({
-          ...e,
-            restPeriods: filtered,
-            sets: ensureArray(e.sets)
-          })
-        })
-      }
-    })
-  }
-}))
+  // Initial State
+  activeDay: null,
+  exercises: [],
+  sets: [],
+  activeDaySub: null,
+  selectedDate: toDateString(new Date()),
+  isLoading: false,
+  isSyncing: false,
+  userId: null,
 
+  // Actions
+  init: (userId: string) => {
+    set({ userId });
+    get().loadDay(get().selectedDate);
+  },
+
+  loadDay: async (date: string) => {
+    const { activeDaySub, userId } = get();
+    if (!userId) return;
+
+    // Unsubscribe from previous subscription
+    activeDaySub?.unsubscribe();
+
+    set({ isLoading: true, selectedDate: date, activeDay: null, exercises: [], sets: [] });
+
+    const db = await getDb();
+
+    // 1. Fetch day from backend API
+    try {
+      const remoteDay = await api.getDay(date);
+      if (remoteDay) {
+        // 2. Upsert data into RxDB
+        // This is a simplified upsert. A real implementation would need to be more robust
+        // and handle conflicts between local and remote data.
+        const workoutDayData: WorkoutDay = {
+            id: remoteDay.id,
+            tempId: remoteDay.id, // Using the backend ID as tempId for synced data
+            userId: userId,
+            workoutDate: remoteDay.workoutDate,
+            notes: remoteDay.notes,
+            isRestDay: remoteDay.isRestDay,
+            createdAt: remoteDay.createdAt,
+            updatedAt: remoteDay.updatedAt,
+            isUnsynced: false
+        };
+        await db.workout_days.upsert(workoutDayData);
+
+        for (const ex of remoteDay.exercises) {
+            const exerciseData: Exercise = {
+                id: ex.id,
+                tempId: ex.id,
+                dayId: remoteDay.id,
+                catalogId: ex.catalogId,
+                name: ex.name,
+                position: ex.position,
+                comment: ex.comment,
+                createdAt: ex.createdAt,
+                updatedAt: ex.updatedAt,
+                isUnsynced: false
+            };
+            await db.exercises.upsert(exerciseData);
+
+            if(ex.sets) {
+                for (const s of ex.sets) {
+                    const setData: Set = {
+                        id: s.id,
+                        tempId: s.id,
+                        exerciseId: ex.id,
+                        userId: userId,
+                        workoutDate: remoteDay.workoutDate,
+                        position: s.position,
+                        reps: s.reps,
+                        weightKg: s.weightKg,
+                        rpe: s.rpe,
+                        isWarmup: s.isWarmup,
+                        restSeconds: s.restSeconds,
+                        tempo: s.tempo,
+                        performedAt: s.performedAt,
+                        volumeKg: s.volumeKg,
+                        createdAt: s.createdAt,
+                        updatedAt: s.updatedAt,
+                        isUnsynced: false,
+                    };
+                    await db.sets.upsert(setData);
+                }
+            }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch day from backend', error);
+      // Day might not exist on the backend, which is fine.
+    }
+
+    // 3. Subscribe to the day and its exercises/sets from RxDB
+    const daySub = db.workout_days
+      .findOne({
+        selector: {
+          workoutDate: date,
+          userId: userId,
+        },
+      })
+      .$.subscribe(async (dayDoc) => {
+        set({ activeDay: dayDoc });
+        if (dayDoc) {
+          // Subscribe to exercises
+          const exercisesSub = dayDoc.populate('exercises').then(exercises => {
+            set({ exercises });
+            // For each exercise, get sets
+            const setsPromises = exercises.map(ex => db.sets.find({ selector: { exerciseId: ex.tempId } }).exec());
+            Promise.all(setsPromises).then(setsArrays => {
+              const allSets = setsArrays.flat();
+              set({ sets: allSets });
+            });
+          });
+        } else {
+          set({ exercises: [], sets: [] });
+        }
+      });
+
+    set({ isLoading: false, activeDaySub: daySub });
+  },
+
+  addExercise: async (catalogId: string, name: string) => {
+    const { userId, selectedDate, exercises, activeDay } = get();
+    if (!userId) return '';
+    
+    const db = await getDb();
+    let dayId = activeDay?.tempId;
+
+    // If there's no active day, create one
+    if(!activeDay) {
+        const newDay: WorkoutDay = {
+            id: null,
+            tempId: uuidv4(),
+            userId: userId,
+            workoutDate: selectedDate,
+            isRestDay: false,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            isUnsynced: true,
+        };
+        const newDayDoc = await db.workout_days.insert(newDay);
+        dayId = newDayDoc.tempId;
+    }
+
+    if(!dayId) return '';
+
+    const newExercise: Exercise = {
+        id: null,
+        tempId: uuidv4(),
+        dayId: dayId,
+        catalogId: catalogId,
+        name: name,
+        position: exercises.length,
+        isUnsynced: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+    };
+    await db.exercises.insert(newExercise);
+    return newExercise.tempId;
+  },
+
+  updateExercise: async (tempId, patch) => {
+    const db = await getDb();
+    const doc = await db.exercises.findOne(tempId).exec();
+    if (doc) {
+      await doc.atomicUpdate(oldData => ({...oldData, ...patch, isUnsynced: true}));
+    }
+  },
+
+  deleteExercise: async (tempId) => {
+    const db = await getDb();
+    const doc = await db.exercises.findOne(tempId).exec();
+    if (doc) {
+      await db.deleted_documents.insert({
+        id: doc.id,
+        tempId: doc.tempId,
+        collectionName: 'exercises',
+        deletedAt: new Date().toISOString(),
+      });
+      await doc.remove();
+    }
+  },
+  
+  addSet: async (exerciseTempId: string) => {
+    const { userId, selectedDate, sets } = get();
+    if(!userId) return;
+
+    const db = await getDb();
+
+    // find how many sets for this exercise
+    const exerciseSets = await db.sets.find({ selector: { exerciseId: exerciseTempId } }).exec();
+
+    const newSet: Set = {
+        id: null,
+        tempId: uuidv4(),
+        exerciseId: exerciseTempId,
+        userId: userId,
+        workoutDate: selectedDate,
+        position: exerciseSets.length,
+        reps: 0,
+        weightKg: 0,
+        isWarmup: false,
+        isUnsynced: true,
+        volumeKg: 0,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+    };
+    await db.sets.insert(newSet);
+  },
+
+  updateSet: async (tempId: string, patch: Partial<Set>) => {
+    const db = await getDb();
+    const doc = await db.sets.findOne(tempId).exec();
+    if(doc) {
+        await doc.atomicUpdate(oldData => ({...oldData, ...patch, isUnsynced: true}));
+    }
+  },
+
+  deleteSet: async (tempId: string) => {
+    const db = await getDb();
+    const doc = await db.sets.findOne(tempId).exec();
+    if(doc) {
+        await db.deleted_documents.insert({
+            id: doc.id,
+            tempId: doc.tempId,
+            collectionName: 'sets',
+            deletedAt: new Date().toISOString(),
+        });
+        await doc.remove();
+    }
+  },
+
+  sync: async () => {
+    const { isSyncing } = get();
+    if (isSyncing) return;
+
+    set({ isSyncing: true });
+
+    const db = await getDb();
+    const ops: any[] = [];
+
+    // Collect unsynced documents
+    const unsyncedDays = await db.workout_days.find({ selector: { isUnsynced: true } }).exec();
+    const unsyncedExercises = await db.exercises.find({ selector: { isUnsynced: true } }).exec();
+    const unsyncedSets = await db.sets.find({ selector: { isUnsynced: true } }).exec();
+
+    // Collect deleted documents
+    const deletedDocs = await db.deleted_documents.find().exec();
+
+    // Prepare ops for workout days
+    unsyncedDays.forEach(doc => {
+      if (!doc.id) { // Create
+        // Not implemented in backend batch save, handle separately or extend backend
+      } else { // Update
+        ops.push({
+          type: 'updateDay',
+          dayId: doc.id,
+          isRestDay: doc.isRestDay,
+          // notes are not in the api spec for batch update
+        });
+      }
+    });
+
+    // Prepare ops for exercises
+    unsyncedExercises.forEach(doc => {
+      if (!doc.id) { // Create
+        ops.push({
+          type: 'createExercise',
+          tempId: doc.tempId,
+          dayId: doc.dayId,
+          catalogId: doc.catalogId,
+          position: doc.position,
+          comment: doc.comment,
+        });
+      } else { // Update
+        ops.push({
+          type: 'updateExercise',
+          id: doc.id,
+          patch: {
+            position: doc.position,
+            comment: doc.comment,
+          }
+        });
+      }
+    });
+
+    // Prepare ops for sets
+    unsyncedSets.forEach(doc => {
+      const exercise = unsyncedExercises.find(ex => ex.tempId === doc.exerciseId);
+      const exerciseId = exercise ? `temp:${exercise.tempId}` : doc.exerciseId;
+
+      if (!doc.id) { // Create
+        ops.push({
+          type: 'createSet',
+          tempId: doc.tempId,
+          exerciseId: exerciseId,
+          position: doc.position,
+          reps: doc.reps,
+          weightKg: doc.weightKg,
+          isWarmup: doc.isWarmup,
+        });
+      } else { // Update
+        ops.push({
+          type: 'updateSet',
+          id: doc.id,
+          patch: {
+            position: doc.position,
+            reps: doc.reps,
+            weightKg: doc.weightKg,
+            isWarmup: doc.isWarmup,
+          },
+        });
+      }
+    });
+
+    // Prepare ops for deleted documents
+    deletedDocs.forEach(doc => {
+      const id = doc.id || `temp:${doc.tempId}`;
+      if (doc.collectionName === 'exercises') {
+        ops.push({ type: 'deleteExercise', id: id });
+      } else if (doc.collectionName === 'sets') {
+        ops.push({ type: 'deleteSet', id: id });
+      }
+    });
+
+    if (ops.length === 0) {
+      set({ isSyncing: false });
+      return;
+    }
+
+    try {
+      const res = await api.saveBatch(ops, crypto.randomUUID?.() || `${Date.now()}`);
+
+      // Process mappings
+      const { mapping } = res;
+      if (mapping) {
+        if (mapping.exercises) {
+            for (const item of mapping.exercises) {
+                const doc = await db.exercises.findOne(item.tempId).exec();
+                if(doc) await doc.atomicUpdate(old => ({...old, id: item.id, isUnsynced: false}));
+            }
+        }
+        if (mapping.sets) {
+            for (const item of mapping.sets) {
+                const doc = await db.sets.findOne(item.tempId).exec();
+                if(doc) await doc.atomicUpdate(old => ({...old, id: item.id, isUnsynced: false}));
+            }
+        }
+      }
+
+      // Mark updated documents as synced
+      unsyncedDays.forEach(doc => doc.id && doc.atomicPatch({ isUnsynced: false }));
+      unsyncedExercises.forEach(doc => doc.id && doc.atomicPatch({ isUnsynced: false }));
+      unsyncedSets.forEach(doc => doc.id && doc.atomicPatch({ isUnsynced: false }));
+
+      // Clear deleted documents log
+      await db.deleted_documents.find().remove();
+
+      localStorage.setItem('saveEpoch', String(res.serverEpoch));
+
+    } catch (error) {
+      console.error('Sync failed', error);
+      // Handle error, maybe show a notification to the user
+    } finally {
+      set({ isSyncing: false });
+    }
+  },
+
+  cleanup: () => {
+    get().activeDaySub?.unsubscribe();
+  },
+}));

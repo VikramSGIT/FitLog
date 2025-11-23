@@ -1,0 +1,169 @@
+import { RxJsonSchema, RxDocument } from 'rxdb';
+
+// Using a composite key for workout_days to ensure uniqueness per user/date
+// However, RxDB doesn't directly support composite primary keys in the same way a relational DB does.
+// The 'id' will be a concatenation of user_id and workout_date, e.g., `${userId}_${workoutDate}`.
+// For unsynced workout days, we can use a temporary ID.
+
+export type WorkoutDay = {
+  id: string; // This will be the backend ID. Can be null if not synced.
+  tempId?: string; // UUID generated on the client. Primary for local documents.
+  isUnsynced?: boolean;
+  userId: string;
+  workoutDate: string; // ISO 8601 date string 'YYYY-MM-DD'
+  timezone?: string;
+  notes?: string;
+  isRestDay: boolean;
+  createdAt: string; // ISO 8601 timestamp
+  updatedAt: string; // ISO 8601 timestamp
+};
+
+export type Exercise = {
+  id: string; // Backend ID, can be null
+  tempId?: string; // Client-side UUID
+  isUnsynced?: boolean;
+  dayId: string; // Corresponds to WorkoutDay's tempId or id
+  catalogId?: string;
+  name: string;
+  position: number;
+  comment?: string;
+  createdAt: string; // ISO 8601 timestamp
+  updatedAt: string; // ISO 8601 timestamp
+};
+
+export type Set = {
+  id: string; // Backend ID, can be null
+  tempId?: string; // Client-side UUID
+  isUnsynced?: boolean;
+  exerciseId: string; // Corresponds to Exercise's tempId or id
+  userId: string;
+  workoutDate: string; // ISO 8601 date string 'YYYY-MM-DD'
+  position: number;
+  reps: number;
+  weightKg: number;
+  rpe?: number;
+  isWarmup: boolean;
+  restSeconds?: number;
+  tempo?: string;
+  performedAt?: string; // ISO 8601 timestamp
+  volumeKg: number; // This can be a calculated field
+  createdAt: string; // ISO 8601 timestamp
+  updatedAt: string; // ISO 8601 timestamp
+};
+
+// RxDB requires a primary key to be defined. We will use `tempId` as the primary
+// key for local operations and `id` for synced documents.
+// When a document is synced, the backend `id` will be saved.
+
+export const workoutDaySchema: RxJsonSchema<WorkoutDay> = {
+  title: 'workout day schema',
+  version: 0,
+  description: 'describes a single day of a workout',
+  primaryKey: 'tempId',
+  type: 'object',
+  properties: {
+    id: { type: ['string', 'null'] },
+    tempId: { type: 'string', maxLength: 36 },
+    isUnsynced: { type: 'boolean' },
+    userId: { type: 'string', final: true },
+    workoutDate: { type: 'string', format: 'date' },
+    timezone: { type: 'string' },
+    notes: { type: 'string' },
+    isRestDay: { type: 'boolean' },
+    createdAt: { type: 'string', format: 'date-time' },
+    updatedAt: { type: 'string', format: 'date-time' },
+  },
+  required: ['tempId', 'userId', 'workoutDate', 'isRestDay', 'createdAt', 'updatedAt'],
+  indexes: ['workoutDate', 'isUnsynced', ['userId', 'workoutDate']],
+};
+
+export const exerciseSchema: RxJsonSchema<Exercise> = {
+  title: 'exercise schema',
+  version: 0,
+  description: 'describes an exercise within a workout day',
+  primaryKey: 'tempId',
+  type: 'object',
+  properties: {
+    id: { type: ['string', 'null'] },
+    tempId: { type: 'string', maxLength: 36 },
+    isUnsynced: { type: 'boolean' },
+    dayId: { type: 'string', ref: 'workout_days' },
+    catalogId: { type: 'string' },
+    name: { type: 'string' },
+    position: { type: 'integer', minimum: 0 },
+    comment: { type: 'string' },
+    createdAt: { type: 'string', format: 'date-time' },
+    updatedAt: { type: 'string', format: 'date-time' },
+  },
+  required: ['tempId', 'dayId', 'name', 'position', 'createdAt', 'updatedAt'],
+  indexes: ['dayId', 'position', 'isUnsynced'],
+};
+
+export const setSchema: RxJsonSchema<Set> = {
+  title: 'set schema',
+  version: 0,
+  description: 'describes a set within an exercise',
+  primaryKey: 'tempId',
+  type: 'object',
+  properties: {
+    id: { type: ['string', 'null'] },
+    tempId: { type: 'string', maxLength: 36 },
+    isUnsynced: { type: 'boolean' },
+    exerciseId: { type: 'string', ref: 'exercises' },
+    userId: { type: 'string' },
+    workoutDate: { type: 'string', format: 'date' },
+    position: { type: 'integer', minimum: 0 },
+    reps: { type: 'integer', minimum: 1 },
+    weightKg: { type: 'number', minimum: 0 },
+    rpe: { type: 'number', minimum: 0, maximum: 10 },
+    isWarmup: { type: 'boolean' },
+    restSeconds: { type: 'integer', minimum: 0 },
+    tempo: { type: 'string' },
+    performedAt: { type: 'string', format: 'date-time' },
+    volumeKg: { type: 'number' },
+    createdAt: { type: 'string', format: 'date-time' },
+    updatedAt: { type: 'string', format: 'date-time' },
+  },
+  required: [
+    'tempId',
+    'exerciseId',
+    'userId',
+    'workoutDate',
+    'position',
+    'reps',
+    'weightKg',
+    'isWarmup',
+    'createdAt',
+    'updatedAt',
+  ],
+  indexes: ['exerciseId', 'position', 'isUnsynced', 'workoutDate'],
+};
+
+export type WorkoutDayDoc = RxDocument<WorkoutDay>;
+export type ExerciseDoc = RxDocument<Exercise>;
+export type SetDoc = RxDocument<Set>;
+
+export type DeletedDocument = {
+  id: string | null;
+  tempId: string;
+  collectionName: string;
+  deletedAt: string;
+};
+
+export const deletedDocumentSchema: RxJsonSchema<DeletedDocument> = {
+  title: 'deleted document schema',
+  version: 0,
+  description: 'stores information about deleted documents for syncing',
+  primaryKey: 'tempId',
+  type: 'object',
+  properties: {
+    id: { type: ['string', 'null'] },
+    tempId: { type: 'string' },
+    collectionName: { type: 'string' },
+    deletedAt: { type: 'string', format: 'date-time' },
+  },
+  required: ['tempId', 'collectionName', 'deletedAt'],
+  indexes: ['deletedAt'],
+};
+
+export type DeletedDocumentDoc = RxDocument<DeletedDocument>;

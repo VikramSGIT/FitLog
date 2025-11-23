@@ -81,8 +81,8 @@ export default function HeaderBar({
   } = useWorkoutStore()
   const hasPendingChanges =
     day?.isUnsynced ||
-    exercises.some(e => e.isUnsynced) ||
-    sets.some(s => s.isUnsynced) ||
+    exercises.some(e => e.isUnsynced === true) ||
+    sets.some(s => s.isUnsynced === true) ||
     deletedDocumentsCount > 0
 
   const [restUpdating, setRestUpdating] = useState(false)
@@ -432,9 +432,8 @@ export default function HeaderBar({
                     }
                     try {
                       await onSave()
-                    } catch (error) {
+                    } catch {
                       // Error is handled by the store's saveStatus
-                      console.error('Save failed:', error)
                     }
                   }}
                   loading={saving === 'saving'}

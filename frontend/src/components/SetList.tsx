@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { api, Exercise, ExerciseEntry, RestPeriod, WorkoutSet } from '@/api/client'
+import { api, ExerciseEntry, RestPeriod, WorkoutSet } from '@/api/client'
+import { Exercise, Set } from '@/db/schema'
 import { useWorkoutStore } from '@/store/useWorkoutStore'
 import { useAutoSave } from '@/hooks/useAutoSave'
 import { ActionIcon, Group, Paper, Stack, Text, TextInput, Tooltip, useMantineTheme } from '@mantine/core'
@@ -7,7 +8,7 @@ import { IconTrash } from '@tabler/icons-react'
 import { DEFAULT_SURFACES, ThemeSurfaces } from '@/theme'
 import { AUTO_SAVE_DELAY_MS } from '@/config'
 
-function SetRow({ set, multiplier, baseWeightKg }: { set: WorkoutSet; multiplier?: number | null; baseWeightKg?: number | null }) {
+function SetRow({ set, multiplier, baseWeightKg }: { set: Set; multiplier?: number | null; baseWeightKg?: number | null }) {
   const { updateSet, deleteSet, isLoading: dayLoading } = useWorkoutStore()
   const [repsInput, setRepsInput] = useState<string>(() => String(set.reps))
   const [weightInput, setWeightInput] = useState<string>(() => String(set.weightKg))
@@ -41,7 +42,7 @@ function SetRow({ set, multiplier, baseWeightKg }: { set: WorkoutSet; multiplier
   }, [weightInput, multiplier, baseWeightKg])
 
   const save = useCallback(async (payload: { reps: number | null; weight: number | null }) => {
-    const updates: Partial<Pick<WorkoutSet, 'reps' | 'weightKg'>> = {}
+    const updates: Partial<Pick<Set, 'reps' | 'weightKg'>> = {}
     if (payload.reps !== null && payload.reps > 0) {
       const roundedReps = Math.round(payload.reps)
       if (roundedReps !== set.reps) {

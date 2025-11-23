@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { Subscription } from 'rxjs';
 import { getDb } from '@/db/service';
-import { WorkoutDay, Exercise, Set, WorkoutDayDoc } from '@/db/schema';
+import { WorkoutDay, Exercise, WorkoutDayDoc } from '@/db/schema';
+import type { Set } from '@/db/schema';
 import { api } from '@/api/client';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -29,6 +30,8 @@ export type WorkoutState = {
   daySub: Subscription | null;
   exercisesSub: Subscription | null;
   setsSub: Subscription | null;
+  deletedDocumentsSub: Subscription | null;
+  deletedDocumentsCount: number;
   selectedDate: string;
   isLoading: boolean;
   isSyncing: boolean;
@@ -77,38 +80,51 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => {
 
   return {
     // Initial State
-    activeDay: null,
-    exercises: [],
-    sets: [],
+  activeDay: null,
+  exercises: [],
+  sets: [],
     daySub: null,
-    exercisesSub: null,
+  exercisesSub: null,
     setsSub: null,
-    selectedDate: toDateString(new Date()),
-    isLoading: false,
-    isSyncing: false,
-    userId: null,
-    saveStatus: 'idle' as SaveStatus,
-    saveMode: null as SaveMode | null,
-    
+  deletedDocumentsSub: null,
+  deletedDocumentsCount: 0,
+  selectedDate: toDateString(new Date()),
+  isLoading: false,
+  isSyncing: false,
+  userId: null,
+  saveStatus: 'idle' as SaveStatus,
+  saveMode: null as SaveMode | null,
+  
     // Computed selectors
     day: null,
-    dayLoading: false,
+  dayLoading: false,
 
-    // Actions
+  // Actions
     init: (userId: string) => {
       set({ userId });
-      get().loadDay(get().selectedDate).catch(() => {
-        // Error handled silently
-      });
-    },
 
-    loadDay: async (date: string) => {
+      // Subscribe to deleted documents count
+      getDb().then(db => {
+      const sub = db.deleted_documents.find().$.subscribe(docs => {
+        set({ deletedDocumentsCount: docs.length });
+      });
+      set({ deletedDocumentsSub: sub });
+      }).catch(() => {
+        // Failed to subscribe to deleted documents
+      });
+      
+      get().loadDay(get().selectedDate).catch(() => {
+      // Error handled silently
+      });
+  },
+
+  loadDay: async (date: string) => {
       const { userId, daySub, exercisesSub, setsSub } = get();
       if (!userId) return;
 
       // Clean up previous subscriptions
       daySub?.unsubscribe();
-      exercisesSub?.unsubscribe();
+    exercisesSub?.unsubscribe();
       setsSub?.unsubscribe();
 
       set({ 
@@ -121,41 +137,41 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => {
         day: null 
       });
 
-      const db = await getDb();
+    const db = await getDb();
 
       // Step 1: Try to find day in local DB first
       let dayDoc = await db.workout_days.findOne({
-        selector: {
-          workoutDate: date,
-          userId: userId,
+          selector: {
+            workoutDate: date,
+            userId: userId,
         },
-      }).exec();
-
+        }).exec();
+        
       // Step 2: If not found locally, fetch from server and save locally
       if (!dayDoc) {
         try {
           const remoteDay = await api.getDayByDate(date, true);
           if (remoteDay && 'id' in remoteDay && remoteDay.id) {
-            const workoutDateStr = remoteDay.workoutDate.includes('T') 
-              ? remoteDay.workoutDate.split('T')[0] 
-              : remoteDay.workoutDate;
-            
-            const workoutDayData: WorkoutDay = {
-              id: remoteDay.id,
+        const workoutDateStr = remoteDay.workoutDate.includes('T') 
+          ? remoteDay.workoutDate.split('T')[0] 
+          : remoteDay.workoutDate;
+        
+        const workoutDayData: WorkoutDay = {
+            id: remoteDay.id,
               tempId: uuidv4(), // Generate tempId for local reference
-              userId: userId,
-              workoutDate: workoutDateStr,
+            userId: userId,
+            workoutDate: workoutDateStr,
               notes: remoteDay.notes || undefined,
-              isRestDay: remoteDay.isRestDay,
+            isRestDay: remoteDay.isRestDay,
               createdAt: new Date().toISOString(),
               updatedAt: new Date().toISOString(),
-              isUnsynced: false
-            };
+            isUnsynced: false
+        };
             dayDoc = await db.workout_days.insert(workoutDayData);
 
             // Save exercises and sets
-            for (const ex of remoteDay.exercises) {
-              const exerciseData: Exercise = {
+        for (const ex of remoteDay.exercises) {
+            const exerciseData: Exercise = {
                 id: ex.id,
                 tempId: uuidv4(),
                 dayId: dayDoc.tempId!, // Always use tempId for local references
@@ -166,56 +182,56 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => {
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString(),
                 isUnsynced: false
-              };
+            };
               const exerciseDoc = await db.exercises.insert(exerciseData);
 
               if (ex.sets) {
                 for (const s of ex.sets) {
-                  const setData: Set = {
-                    id: s.id,
+                    const setData: Set = {
+                        id: s.id,
                     tempId: uuidv4(),
                     exerciseId: exerciseDoc.tempId!, // Always use tempId for local references
-                    userId: userId,
+                        userId: userId,
                     workoutDate: workoutDateStr,
-                    position: s.position,
-                    reps: s.reps,
-                    weightKg: s.weightKg,
-                    rpe: s.rpe,
-                    isWarmup: s.isWarmup,
-                    restSeconds: s.restSeconds,
-                    tempo: s.tempo,
-                    performedAt: s.performedAt,
-                    volumeKg: s.volumeKg,
+                        position: s.position,
+                        reps: s.reps,
+                        weightKg: s.weightKg,
+                        rpe: s.rpe,
+                        isWarmup: s.isWarmup,
+                        restSeconds: s.restSeconds,
+                        tempo: s.tempo,
+                        performedAt: s.performedAt,
+                        volumeKg: s.volumeKg,
                     createdAt: new Date().toISOString(),
                     updatedAt: new Date().toISOString(),
-                    isUnsynced: false,
-                  };
+                        isUnsynced: false,
+                    };
                   await db.sets.insert(setData);
                 }
-              }
             }
-          }
-        } catch (error) {
-          // Day doesn't exist on server, that's fine - we'll create it locally when needed
         }
       }
+    } catch (error) {
+          // Day doesn't exist on server, that's fine - we'll create it locally when needed
+        }
+    }
 
       // Step 3: Subscribe to day document
       const newDaySub = db.workout_days
-        .findOne({
-          selector: {
-            workoutDate: date,
-            userId: userId,
-          },
-        })
-        .$.subscribe(async (dayDoc) => {
+      .findOne({
+        selector: {
+          workoutDate: date,
+          userId: userId,
+        },
+      })
+      .$.subscribe(async (dayDoc) => {
           if (!dayDoc) {
             set({ activeDay: null, exercises: [], sets: [], day: null, dayLoading: false });
             return;
           }
 
           set({ activeDay: dayDoc, day: computeDay(dayDoc, get().exercises), dayLoading: false });
-
+          
           // Clean up previous exercise subscription
           const { exercisesSub: prevExercisesSub } = get();
           prevExercisesSub?.unsubscribe();
@@ -226,9 +242,10 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => {
               selector: { dayId: dayDoc.tempId },
             })
             .$.subscribe(exercises => {
-              const sortedExercises = [...exercises].sort((a, b) => a.position - b.position);
-              const { activeDay } = get();
-              set({ exercises: sortedExercises, day: computeDay(activeDay, sortedExercises) });
+              // RxDB documents should have all properties accessible
+            const sortedExercises = [...exercises].sort((a, b) => a.position - b.position);
+            const { activeDay } = get();
+            set({ exercises: sortedExercises, day: computeDay(activeDay, sortedExercises) });
 
               // Clean up previous sets subscription
               const { setsSub: prevSetsSub } = get();
@@ -239,16 +256,16 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => {
               if (exerciseTempIds.length > 0) {
                 const setsSub = db.sets
                   .find({
-                    selector: {
+                selector: {
                       exerciseId: { $in: exerciseTempIds }
-                    }
+                  }
                   })
                   .$.subscribe(sets => {
-                    const sortedSets = [...sets].sort((a, b) => a.position - b.position);
-                    set({ sets: sortedSets });
-                  });
+                const sortedSets = [...sets].sort((a, b) => a.position - b.position);
+                set({ sets: sortedSets });
+              });
                 set({ setsSub });
-              } else {
+            } else {
                 set({ sets: [], setsSub: null });
               }
             });
@@ -257,32 +274,32 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => {
         });
 
       set({ daySub: newDaySub, isLoading: false });
-    },
+  },
 
-    addExercise: async (catalogId: string, name: string) => {
-      const { userId, selectedDate, exercises, activeDay } = get();
-      if (!userId) return '';
-      
-      const db = await getDb();
+  addExercise: async (catalogId: string, name: string) => {
+    const { userId, selectedDate, exercises, activeDay } = get();
+    if (!userId) return '';
+    
+    const db = await getDb();
       let dayDoc = activeDay;
 
       // Create day if it doesn't exist
       if (!dayDoc) {
         const newDay: WorkoutDay = {
           id: null as any,
-          tempId: uuidv4(),
-          userId: userId,
-          workoutDate: selectedDate,
-          isRestDay: false,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          isUnsynced: true,
+            tempId: uuidv4(),
+            userId: userId,
+            workoutDate: selectedDate,
+            isRestDay: false,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            isUnsynced: true,
         };
         dayDoc = await db.workout_days.insert(newDay);
         // The subscription will update activeDay automatically
-      }
+    }
 
-      const newExercise: Exercise = {
+    const newExercise: Exercise = {
         id: null as any,
         tempId: uuidv4(),
         dayId: dayDoc.tempId!,
@@ -292,91 +309,91 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => {
         isUnsynced: true,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-      };
-      await db.exercises.insert(newExercise);
+    };
+    await db.exercises.insert(newExercise);
       return newExercise.tempId!;
-    },
+  },
 
-    queueCreateExercise: async ({ dayId, catalogId, nameDisplay, position }) => {
+  queueCreateExercise: async ({ dayId, catalogId, nameDisplay, position }) => {
       const { userId, activeDay, selectedDate } = get();
-      if (!userId) return;
-      
-      const db = await getDb();
+    if (!userId) return;
+    
+    const db = await getDb();
       let dayDoc = activeDay;
 
       // Find or create day
       if (!dayDoc || (dayDoc.tempId !== dayId && dayDoc.id !== dayId)) {
         dayDoc = await db.workout_days.findOne({
-          selector: {
-            $or: [
+        selector: {
+          $or: [
               { tempId: dayId },
               { id: dayId }
-            ]
-          }
-        }).exec();
-
-        if (!dayDoc) {
-          const newDay: WorkoutDay = {
-            id: null as any,
-            tempId: uuidv4(),
-            userId: userId,
-            workoutDate: selectedDate,
-            isRestDay: false,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            isUnsynced: true,
-          };
-          dayDoc = await db.workout_days.insert(newDay);
+          ]
         }
-      }
+      }).exec();
       
-      const newExercise: Exercise = {
-        id: null as any,
-        tempId: uuidv4(),
-        dayId: dayDoc.tempId!,
-        catalogId: catalogId,
-        name: nameDisplay,
-        position: position,
-        isUnsynced: true,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      await db.exercises.insert(newExercise);
-    },
-
-    updateExercise: async (tempId, patch) => {
-      const db = await getDb();
-      const doc = await db.exercises.findOne(tempId).exec();
-      if (doc) {
-        await doc.incrementalModify((oldData: Exercise) => ({...oldData, ...patch, isUnsynced: true}));
+        if (!dayDoc) {
+        const newDay: WorkoutDay = {
+            id: null as any,
+          tempId: uuidv4(),
+          userId: userId,
+            workoutDate: selectedDate,
+          isRestDay: false,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          isUnsynced: true,
+        };
+          dayDoc = await db.workout_days.insert(newDay);
       }
-    },
+    }
+    
+    const newExercise: Exercise = {
+        id: null as any,
+      tempId: uuidv4(),
+        dayId: dayDoc.tempId!,
+      catalogId: catalogId,
+      name: nameDisplay,
+      position: position,
+      isUnsynced: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    await db.exercises.insert(newExercise);
+  },
 
-    deleteExercise: async (tempId) => {
-      const db = await getDb();
-      const doc = await db.exercises.findOne(tempId).exec();
-      if (doc) {
+  updateExercise: async (tempId, patch) => {
+    const db = await getDb();
+    const doc = await db.exercises.findOne(tempId).exec();
+    if (doc) {
+        await doc.incrementalModify((oldData: Exercise) => ({...oldData, ...patch, isUnsynced: true}));
+    }
+  },
+
+  deleteExercise: async (tempId) => {
+    const db = await getDb();
+    const doc = await db.exercises.findOne(tempId).exec();
+    if (doc) {
         // Track deletion if synced
-        if (doc.id) {
-          await db.deleted_documents.insert({
+      if (doc.id) {
+        await db.deleted_documents.insert({
             id: doc.id as any,
             tempId: uuidv4(),
-            collectionName: 'exercises',
-            deletedAt: new Date().toISOString(),
-          });
-        }
-        await doc.remove();
+          collectionName: 'exercises',
+          deletedAt: new Date().toISOString(),
+        });
       }
-    },
-    
-    addSet: async (exerciseTempId: string) => {
-      const { userId, selectedDate, sets } = get();
+      await doc.remove();
+    }
+  },
+  
+  addSet: async (exerciseTempId: string) => {
+    const { userId, selectedDate, sets } = get();
       if (!userId) return;
 
-      const db = await getDb();
+    const db = await getDb();
       const exerciseSets = sets.filter(s => s.exerciseId === exerciseTempId);
 
-      const newSet: Set = {
+    const newSet: Set = {
         id: null as any,
         tempId: uuidv4(),
         exerciseId: exerciseTempId,
@@ -390,21 +407,21 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => {
         volumeKg: 0,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-      };
-      await db.sets.insert(newSet);
-    },
+    };
+    await db.sets.insert(newSet);
+  },
 
-    updateSet: async (tempId: string, patch: Partial<Set>) => {
-      const db = await getDb();
-      const doc = await db.sets.findOne(tempId).exec();
+  updateSet: async (tempId: string, patch: Partial<Set>) => {
+    const db = await getDb();
+    const doc = await db.sets.findOne(tempId).exec();
       if (doc) {
         await doc.incrementalModify((oldData: Set) => ({...oldData, ...patch, isUnsynced: true}));
-      }
-    },
+    }
+  },
 
-    deleteSet: async (tempId: string) => {
-      const db = await getDb();
-      const doc = await db.sets.findOne(tempId).exec();
+  deleteSet: async (tempId: string) => {
+    const db = await getDb();
+    const doc = await db.sets.findOne(tempId).exec();
       if (doc) {
         // Track deletion if synced
         if (doc.id) {
@@ -415,44 +432,48 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => {
             deletedAt: new Date().toISOString(),
           });
         }
+        
+        // Mark parent exercise as unsynced when a set is deleted
+        // Try to find exercise by tempId first (most common case)
+        let exerciseDoc = await db.exercises.findOne(doc.exerciseId).exec();
+        // If not found, try to find by id (in case exerciseId is a server ID)
+        if (!exerciseDoc) {
+          const exercises = await db.exercises.find({ selector: { id: doc.exerciseId } }).exec();
+          exerciseDoc = exercises[0] || null;
+        }
+        if (exerciseDoc) {
+          await exerciseDoc.incrementalModify((oldData: Exercise) => ({...oldData, isUnsynced: true}));
+        }
+        
         await doc.remove();
-      }
-    },
+    }
+  },
 
-    updateDay: async (tempId: string, patch: Partial<WorkoutDay>) => {
-      const db = await getDb();
-      const doc = await db.workout_days.findOne(tempId).exec();
+  updateDay: async (tempId: string, patch: Partial<WorkoutDay>) => {
+    const db = await getDb();
+    const doc = await db.workout_days.findOne(tempId).exec();
       if (doc) {
         await doc.incrementalModify((oldData: WorkoutDay) => ({...oldData, ...patch, isUnsynced: true}));
-      }
-    },
+    }
+  },
 
-    sync: async () => {
-      const { isSyncing } = get();
+  sync: async () => {
+    const { isSyncing } = get();
       if (isSyncing) {
-        console.log('[Sync] Already syncing, skipping');
         return;
       }
 
-      console.log('[Sync] Starting sync...');
-      set({ isSyncing: true });
+    set({ isSyncing: true });
       get().setSaving('saving', 'manual');
 
-      const db = await getDb();
+    const db = await getDb();
 
       try {
         // Collect all unsynced changes
-        const unsyncedDays = await db.workout_days.find({ selector: { isUnsynced: true } }).exec();
-        const unsyncedExercises = await db.exercises.find({ selector: { isUnsynced: true } }).exec();
-        const unsyncedSets = await db.sets.find({ selector: { isUnsynced: true } }).exec();
-        const deletedDocs = await db.deleted_documents.find().exec();
-        
-        console.log('[Sync] Found unsynced:', {
-          days: unsyncedDays.length,
-          exercises: unsyncedExercises.length,
-          sets: unsyncedSets.length,
-          deleted: deletedDocs.length
-        });
+    const unsyncedDays = await db.workout_days.find({ selector: { isUnsynced: true } }).exec();
+    const unsyncedExercises = await db.exercises.find({ selector: { isUnsynced: true } }).exec();
+    const unsyncedSets = await db.sets.find({ selector: { isUnsynced: true } }).exec();
+    const deletedDocs = await db.deleted_documents.find().exec();
 
         const ops: any[] = [];
         const dayIdMap = new Map<string, string>(); // tempId -> serverId
@@ -493,8 +514,8 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => {
                 }
                 return remoteDay.id;
               }
-            } catch (err) {
-              console.error('[Sync] Failed to create day:', err);
+            } catch {
+              // Failed to create day
             }
           }
           return null;
@@ -516,8 +537,8 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => {
           } else {
             dayIdMap.set(day.tempId!, day.id);
             // Update day if needed
-            ops.push({
-              type: 'updateDay',
+        ops.push({
+          type: 'updateDay',
               dayId: day.id,
               isRestDay: day.isRestDay,
             });
@@ -530,8 +551,8 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => {
             // Create - resolve dayId
             const serverDayId = await resolveDayId(ex.dayId);
             if (serverDayId) {
-              ops.push({
-                type: 'createExercise',
+        ops.push({
+          type: 'createExercise',
                 tempId: ex.tempId!,
                 dayId: serverDayId,
                 catalogId: ex.catalogId,
@@ -541,15 +562,15 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => {
             }
           } else {
             // Update
-            ops.push({
-              type: 'updateExercise',
+        ops.push({
+          type: 'updateExercise',
               id: ex.id,
-              patch: {
+          patch: {
                 position: ex.position,
                 comment: ex.comment,
-              }
-            });
           }
+        });
+      }
         }
 
         // Helper to resolve exercise ID (tempId -> serverId)
@@ -581,8 +602,8 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => {
             // Create - resolve exerciseId
             const serverExerciseId = await resolveExerciseId(set.exerciseId);
             if (serverExerciseId) {
-              ops.push({
-                type: 'createSet',
+        ops.push({
+          type: 'createSet',
                 tempId: set.tempId!,
                 exerciseId: serverExerciseId,
                 position: set.position,
@@ -593,125 +614,139 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => {
             }
           } else {
             // Update
-            ops.push({
-              type: 'updateSet',
+        ops.push({
+          type: 'updateSet',
               id: set.id,
-              patch: {
+          patch: {
                 position: set.position,
                 reps: set.reps,
                 weightKg: set.weightKg,
                 isWarmup: set.isWarmup,
-              },
-            });
-          }
+          },
+        });
+      }
         }
 
         // Process deletions
         for (const doc of deletedDocs) {
           if (doc.id && doc.collectionName === 'exercises') {
-            ops.push({ type: 'deleteExercise', id: doc.id });
+        ops.push({ type: 'deleteExercise', id: doc.id });
           } else if (doc.id && doc.collectionName === 'sets') {
-            ops.push({ type: 'deleteSet', id: doc.id });
-          }
+        ops.push({ type: 'deleteSet', id: doc.id });
+      }
         }
 
-        console.log('[Sync] Prepared ops:', ops.length);
-        
-        if (ops.length === 0) {
-          console.log('[Sync] No operations to sync');
-          set({ isSyncing: false });
+    if (ops.length === 0) {
+      set({ isSyncing: false });
           get().setSaving('idle', 'manual');
-          return;
-        }
+      return;
+    }
 
         // Send to server
-        console.log('[Sync] Sending to server...', ops);
-        const clientEpoch = Number(localStorage.getItem('saveEpoch') || '0');
-        const res = await api.saveBatch(ops, crypto.randomUUID?.() || `${Date.now()}`, clientEpoch);
-        console.log('[Sync] Server response:', res);
+      const clientEpoch = Number(localStorage.getItem('saveEpoch') || '0');
+      const res = await api.saveBatch(ops, crypto.randomUUID?.() || `${Date.now()}`, clientEpoch);
 
-        // Apply server mappings
+        // Track all documents that were synced (by tempId)
+        const syncedExerciseTempIds = new Set<string>();
+        const syncedSetTempIds = new Set<string>();
+
+        // Apply server mappings and mark newly created documents as synced
         if (res.mapping) {
           if (res.mapping.exercises) {
             for (const item of res.mapping.exercises) {
-              const doc = await db.exercises.findOne(item.tempId).exec();
+                const doc = await db.exercises.findOne(item.tempId).exec();
               if (doc) {
                 await doc.incrementalModify((old: Exercise) => ({...old, id: item.id, isUnsynced: false}));
+                syncedExerciseTempIds.add(item.tempId);
               }
             }
-          }
+        }
           if (res.mapping.sets) {
             for (const item of res.mapping.sets) {
-              const doc = await db.sets.findOne(item.tempId).exec();
+                const doc = await db.sets.findOne(item.tempId).exec();
               if (doc) {
                 await doc.incrementalModify((old: Set) => ({...old, id: item.id, isUnsynced: false}));
+                syncedSetTempIds.add(item.tempId);
               }
             }
           }
         }
 
         // Mark all synced documents as synced
+        // For days - mark all that were in ops or have IDs
         for (const day of unsyncedDays) {
           if (day.id) {
-            await day.incrementalModify((old: WorkoutDay) => ({...old, isUnsynced: false}));
+            const dayDoc = await db.workout_days.findOne(day.tempId).exec();
+            if (dayDoc) {
+              await dayDoc.incrementalModify((old: WorkoutDay) => ({...old, isUnsynced: false}));
+            }
           }
         }
+        
+        // For exercises - mark all that were synced (either had ID or got one from mapping)
         for (const ex of unsyncedExercises) {
-          if (ex.id) {
-            await ex.incrementalModify((old: Exercise) => ({...old, isUnsynced: false}));
+          // Mark as synced if it already had an ID, or if it was in the mapping
+          if (ex.id || syncedExerciseTempIds.has(ex.tempId!)) {
+            const doc = await db.exercises.findOne(ex.tempId).exec();
+            if (doc) {
+              await doc.incrementalModify((old: Exercise) => ({...old, isUnsynced: false}));
+            }
           }
         }
+        
+        // For sets - mark all that were synced (either had ID or got one from mapping)
         for (const set of unsyncedSets) {
-          if (set.id) {
-            await set.incrementalModify((old: Set) => ({...old, isUnsynced: false}));
+          // Mark as synced if it already had an ID, or if it was in the mapping
+          if (set.id || syncedSetTempIds.has(set.tempId!)) {
+            const doc = await db.sets.findOne(set.tempId).exec();
+            if (doc) {
+              await doc.incrementalModify((old: Set) => ({...old, isUnsynced: false}));
+            }
           }
         }
 
         // Clear deleted documents
-        await db.deleted_documents.find().remove();
+      await db.deleted_documents.find().remove();
 
         // Update epoch
-        localStorage.setItem('saveEpoch', String(res.serverEpoch));
+      localStorage.setItem('saveEpoch', String(res.serverEpoch));
 
         // Mark as saved
-        console.log('[Sync] Sync completed successfully');
         get().setSaving('saved', 'manual');
 
-      } catch (error: any) {
-        console.error('[Sync] Error during sync:', error);
+    } catch (error: any) {
         // Handle stale epoch
-        if (error.code === 'stale_epoch' && error.serverEpoch) {
-          console.log('[Sync] Stale epoch detected, updating...');
-          localStorage.setItem('saveEpoch', String(error.serverEpoch));
-          await db.deleted_documents.find().remove();
-        }
-        get().setSaving('error', 'manual');
-        throw error;
-      } finally {
-        set({ isSyncing: false });
-        console.log('[Sync] Sync finished');
+      if (error.code === 'stale_epoch' && error.serverEpoch) {
+        localStorage.setItem('saveEpoch', String(error.serverEpoch));
+        await db.deleted_documents.find().remove();
       }
-    },
+        get().setSaving('error', 'manual');
+      throw error;
+    } finally {
+      set({ isSyncing: false });
+    }
+  },
 
-    cleanup: () => {
-      const { daySub, exercisesSub, setsSub } = get();
+  cleanup: () => {
+      const { daySub, exercisesSub, setsSub, deletedDocumentsSub } = get();
       daySub?.unsubscribe();
       exercisesSub?.unsubscribe();
       setsSub?.unsubscribe();
-    },
+      deletedDocumentsSub?.unsubscribe();
+  },
 
-    setSaving: (status: SaveStatus, mode: SaveMode) => {
-      set({ saveStatus: status, saveMode: mode });
-    },
+  setSaving: (status: SaveStatus, mode: SaveMode) => {
+    set({ saveStatus: status, saveMode: mode });
+  },
 
-    registerAutoSave: (flush: () => Promise<boolean>) => {
-      autoSaveFlushes.push(flush);
-      return () => {
-        const index = autoSaveFlushes.indexOf(flush);
-        if (index > -1) {
-          autoSaveFlushes.splice(index, 1);
-        }
-      };
-    },
+  registerAutoSave: (flush: () => Promise<boolean>) => {
+    autoSaveFlushes.push(flush);
+    return () => {
+      const index = autoSaveFlushes.indexOf(flush);
+      if (index > -1) {
+        autoSaveFlushes.splice(index, 1);
+      }
+    };
+  },
   };
 });

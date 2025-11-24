@@ -304,7 +304,7 @@ export default function HeaderBar({
     }
     setRestUpdating(true)
     const next = !currentDay.isRestDay
-    useWorkoutStore.getState().updateDay(currentDay.tempId, { isRestDay: next })
+    useWorkoutStore.getState().updateDay(currentDay.id, { isRestDay: next })
     notifications.show({
       title: next ? 'Marked rest day' : 'Switched to training day',
       message: next ? 'This day is now a rest day.' : 'This day is now a training day.',
@@ -328,7 +328,7 @@ export default function HeaderBar({
     setRestDayModalOpen(false)
     setRestUpdating(true)
     const next = !currentDay.isRestDay
-    useWorkoutStore.getState().updateDay(currentDay.tempId, { isRestDay: next })
+    useWorkoutStore.getState().updateDay(currentDay.id, { isRestDay: next })
     notifications.show({
       title: next ? 'Marked rest day' : 'Switched to training day',
       message: next ? 'This day is now a rest day.' : 'This day is now a training day.',

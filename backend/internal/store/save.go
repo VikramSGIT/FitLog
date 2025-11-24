@@ -35,6 +35,7 @@ const (
 	opUpdateRest       opType = "updateRest"
 	opDeleteRest       opType = "deleteRest"
 	opUpdateDay        opType = "updateDay"
+	opCreateDay        opType = "createDay"
 )
 
 type opEnvelope struct {
@@ -146,6 +147,13 @@ type updateDayOp struct {
 	IsRestDay bool   `json:"isRestDay"`
 }
 
+type createDayOp struct {
+	Type        opType `json:"type"`
+	LocalID     string `json:"localId"`
+	WorkoutDate string `json:"workoutDate"`
+	Timezone    string `json:"timezone"`
+}
+
 // SaveMapping is returned to map temp -> real IDs created during the batch.
 type SaveMapping struct {
 	Exercises []LocalIdMap `json:"exercises"`
@@ -186,6 +194,7 @@ func (s *Save) ProcessBatch(ctx context.Context, userID string, rawOps []json.Ra
 	}()
 
 	tempToRealExercise := make(map[string]string)
+	tempToRealDay := make(map[string]string)
 	tempToRealSet := make(map[string]string)
 	tempToRealRest := make(map[string]string)
 	mapping := SaveMapping{}
@@ -193,6 +202,29 @@ func (s *Save) ProcessBatch(ctx context.Context, userID string, rawOps []json.Ra
 	// Execute operations sequentially in the exact order received
 	for _, e := range envs {
 		switch e.Type {
+		case opCreateDay:
+			var op createDayOp
+			if err = json.Unmarshal(e.raw, &op); err != nil {
+				return SaveMapping{}, time.Time{}, fmt.Errorf("invalid createDay: %w", err)
+			}
+			if strings.TrimSpace(op.LocalID) == "" || strings.TrimSpace(op.WorkoutDate) == "" {
+				return SaveMapping{}, time.Time{}, errors.New("createDay missing localId or workoutDate")
+			}
+			const qCreateDay = `
+				insert into workout_days (user_id, workout_date, timezone, is_rest_day)
+				values ($1, $2, $3, false)
+				returning id
+			`
+			var realDayID string
+			if err = tx.QueryRowxContext(ctx, qCreateDay, userID, op.WorkoutDate, op.Timezone).Scan(&realDayID); err != nil {
+				// Handle potential conflict, maybe day already exists. For now, we error.
+				return SaveMapping{}, time.Time{}, fmt.Errorf("could not create day, it may already exist: %w", err)
+			}
+			tempToRealDay[op.LocalID] = realDayID
+			// Note: We dont add Day mappings to the response as client creates them interactively.
+
+			log.Printf("save op createDay key=%s user=%s localId=%s id=%s date=%s", safeStr(idKey), userID, op.LocalID, realDayID, op.WorkoutDate)
+
 		case opUpdateDay:
 			var op updateDayOp
 			if err = json.Unmarshal(e.raw, &op); err != nil {
@@ -255,6 +287,12 @@ func (s *Save) ProcessBatch(ctx context.Context, userID string, rawOps []json.Ra
 			if strings.TrimSpace(op.LocalID) == "" || strings.TrimSpace(op.DayID) == "" || strings.TrimSpace(op.CatalogID) == "" {
 				return SaveMapping{}, time.Time{}, errors.New("createExercise missing localId/dayId/catalogId")
 			}
+
+			dayID := resolveMaybeTemp(op.DayID, tempToRealDay)
+			if dayID == "" {
+				return SaveMapping{}, time.Time{}, fmt.Errorf("invalid reference for createExercise.dayId: %s", op.DayID)
+			}
+
 			const qCreateEx = `
 				insert into exercises (day_id, catalog_id, position, comment)
 				select $1, $2, $3, $4
@@ -262,7 +300,7 @@ func (s *Save) ProcessBatch(ctx context.Context, userID string, rawOps []json.Ra
 				returning id
 			`
 			var realExID string
-			if err = tx.QueryRowxContext(ctx, qCreateEx, op.DayID, op.CatalogID, op.Position, op.Comment, userID).Scan(&realExID); err != nil {
+			if err = tx.QueryRowxContext(ctx, qCreateEx, dayID, op.CatalogID, op.Position, op.Comment, userID).Scan(&realExID); err != nil {
 				return SaveMapping{}, time.Time{}, err
 			}
 			tempToRealExercise[op.LocalID] = realExID

@@ -153,7 +153,7 @@ export default function ExerciseList({ onAddFromCatalog }: ExerciseListProps) {
           <Stack gap="sm">
         {exercises.map((ex: Exercise) => (
               <motion.div
-                key={ex.tempId}
+                key={ex.id}
                 initial={{ opacity: 0, y: 16 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.97 }}
@@ -169,5 +169,3 @@ export default function ExerciseList({ onAddFromCatalog }: ExerciseListProps) {
     </Stack>
   )
 }
-
-

@@ -27,9 +27,9 @@ function SetRow({ set, multiplier, baseWeightKg }: { set: Set; multiplier?: numb
     const weightValue = weightInput.trim() === '' ? null : Number.isFinite(Number(weightInput)) ? Number(weightInput) : null;
     
     const isDirty = repsValue !== set.reps || weightValue !== set.weightKg;
-    setSetDirty(set.tempId, isDirty);
+    setSetDirty(set.id, isDirty);
 
-  }, [repsInput, weightInput, set.reps, set.weightKg, set.tempId, setSetDirty]);
+  }, [repsInput, weightInput, set.reps, set.weightKg, set.id, setSetDirty]);
 
   const parsed = useMemo(() => {
     const repsValue = repsInput.trim() === '' ? null : Number.isFinite(Number(repsInput)) ? Math.round(Number(repsInput)) : null
@@ -50,7 +50,7 @@ function SetRow({ set, multiplier, baseWeightKg }: { set: Set; multiplier?: numb
   }, [weightInput, multiplier, baseWeightKg])
 
   const save = useCallback(async (payload: { reps: number | null; weight: number | null }) => {
-    const currentSet = useWorkoutStore.getState().sets.find(s => s.tempId === set.tempId);
+    const currentSet = useWorkoutStore.getState().sets.find(s => s.tempId === set.id);
     // If set has been deleted, we can't save.
     if (!currentSet) {
       return false;
@@ -72,16 +72,16 @@ function SetRow({ set, multiplier, baseWeightKg }: { set: Set; multiplier?: numb
     if (!('reps' in updates) && !('weightKg' in updates)) {
       return false
     }
-    updateSet(set.tempId, updates)
+    updateSet(set.id, updates)
     return true
-  }, [updateSet, set.tempId])
+  }, [updateSet, set.id])
 
   useDebouncedSaveToRxDB(parsed, async (v) => save(v))
 
   const onDelete = useCallback(async () => {
     if (dayLoading) return
-    deleteSet(set.tempId)
-  }, [dayLoading, deleteSet, set.tempId])
+    deleteSet(set.id)
+  }, [dayLoading, deleteSet, set.id])
 
   return (
     <Paper withBorder radius="md" p={0} style={{ borderColor: surfaces.border, backdropFilter: 'none' }}>
@@ -154,8 +154,8 @@ function SetRow({ set, multiplier, baseWeightKg }: { set: Set; multiplier?: numb
 export default function SetList({ exercise }: { exercise: Exercise }) {
   const allSets = useWorkoutStore((s) => s.sets)
   const sets = useMemo(() => {
-    return allSets.filter(s => s.exerciseId === exercise.tempId).sort((a,b) => a.position - b.position)
-  }, [allSets, exercise.tempId])
+    return allSets.filter(s => s.exerciseId === exercise.id).sort((a,b) => a.position - b.position)
+  }, [allSets, exercise.id])
 
   const [catalogScaling, setCatalogScaling] = useState<{ multiplier: number; baseWeightKg: number } | null>(null)
 
@@ -190,7 +190,7 @@ export default function SetList({ exercise }: { exercise: Exercise }) {
     <Stack gap="xs" mt="xs">
       {sets.map((set) => (
         <SetRow
-          key={set.tempId}
+          key={set.id}
           set={set}
           multiplier={effectiveMultiplier}
           baseWeightKg={effectiveBaseWeight}

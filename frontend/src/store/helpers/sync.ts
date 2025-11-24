@@ -1,282 +1,107 @@
-import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '@/db/service';
-import { api } from '@/api/client';
-import { WorkoutDay, Exercise } from '@/db/schema';
-import type { Set } from '@/db/schema';
+import { api, SaveOperation } from '@/api/client';
 import { WorkoutState } from '../useWorkoutStore';
 
 export const sync = async (get: () => WorkoutState, set: (state: Partial<WorkoutState>) => void) => {
-  const { isSyncing } = get();
-  if (isSyncing) {
+  if (get().isSyncing) {
+    console.log('Sync already in progress.');
     return;
   }
-
-  set({ isSyncing: true });
-  get().setSaving('saving', 'manual');
+  set({ isSyncing: true, saveStatus: 'saving' });
 
   const db = await getDb();
-
+  
   try {
-    // Collect all unsynced changes
-    const unsyncedDays = await db.workout_days.find({ selector: { isSynced: true } }).exec();
-    const unsyncedExercises = await db.exercises.find({ selector: { isSynced: true } }).exec();
-    const unsyncedSets = await db.sets.find({ selector: { isSynced: true } }).exec();
+    // 1. Gather all local changes
     const deletedDocs = await db.deleted_documents.find().exec();
+    const unsyncedDays = await db.workout_days.find({ selector: { isSynced: false } }).exec();
+    const unsyncedExercises = await db.exercises.find({ selector: { isSynced: false } }).exec();
+    const unsyncedSets = await db.sets.find({ selector: { isSynced: false } }).exec();
+    
+    // 2. Build the ordered 'ops' array
+    const ops: SaveOperation[] = [];
 
-    const ops: any[] = [];
-    const dayIdMap = new Map<string, string>(); // id -> serverId
-
-    // Helper to resolve day ID (id -> serverId)
-    const resolveDayId = async (dayId: string): Promise<string | null> => {
-      // Check if already in map
-      if (dayIdMap.has(dayId)) {
-        return dayIdMap.get(dayId)!;
-      }
-
-      // Try to find in database by id (primary key)
-      let dayDoc = await db.workout_days.findOne(dayId).exec();
-
-      // If not found by id, try to find by id
-      if (!dayDoc) {
-        const days = await db.workout_days.find({ selector: { id: dayId } }).exec();
-        dayDoc = days[0] || null;
-      }
-
-      if (dayDoc) {
-        if (dayDoc.id) {
-          // Map both id and id to server ID
-          dayIdMap.set(dayDoc.id!, dayDoc.id);
-          if (dayDoc.id !== dayId) {
-            dayIdMap.set(dayId, dayDoc.id);
-          }
-          return dayDoc.id;
-        }
-        // Day doesn't have server ID yet, try to create it
-        try {
-          const remoteDay = await api.getDayByDate(dayDoc.workoutDate, true);
-          if (remoteDay && 'id' in remoteDay && remoteDay.id) {
-            await dayDoc.incrementalModify((old: WorkoutDay) => ({ ...old, id: remoteDay.id, isSynced: false }));
-            dayIdMap.set(dayDoc.id!, remoteDay.id);
-            if (dayDoc.id !== dayId) {
-              dayIdMap.set(dayId, remoteDay.id);
-            }
-            return remoteDay.id;
-          }
-        } catch {
-          // Failed to create day
-        }
-      }
-      return null;
-    };
-
-    // First pass: resolve all unsynced day IDs
-    for (const day of unsyncedDays) {
-      if (!day.id) {
-        // Day needs to be created - use ensure endpoint
-        try {
-          const remoteDay = await api.getDayByDate(day.workoutDate, true);
-          if (remoteDay && 'id' in remoteDay && remoteDay.id) {
-            await day.incrementalModify((old: WorkoutDay) => ({ ...old, id: remoteDay.id, isSynced: false }));
-            dayIdMap.set(day.id!, remoteDay.id);
-          }
-        } catch {
-          // Skip this day for now
-        }
-      } else {
-        dayIdMap.set(day.id!, day.id);
-        // Update day if needed
-        ops.push({
-          type: 'updateDay',
-          dayId: day.id,
-          isRestDay: day.isRestDay,
-        });
-      }
-    }
-
-    const newExerciseTempIds = new Set<string>();
-
-    // Process exercises
-    for (const ex of unsyncedExercises) {
-      if (!ex.id) {
-        // Create - resolve dayId
-        const serverDayId = await resolveDayId(ex.dayId);
-        if (serverDayId) {
-          ops.push({
-            type: 'createExercise',
-            id: ex.id!,
-            dayId: serverDayId,
-            catalogId: ex.catalogId,
-            position: ex.position,
-            comment: ex.comment,
-          });
-          newExerciseTempIds.add(ex.id!);
-        }
-      } else {
-        // Update
-        ops.push({
-          type: 'updateExercise',
-          id: ex.id,
-          patch: {
-            position: ex.position,
-            comment: ex.comment,
-          }
-        });
-      }
-    }
-
-    // Helper to resolve exercise ID (id -> serverId)
-    const resolveExerciseId = async (exerciseId: string): Promise<string | null> => {
-      // Check if it's in unsynced exercises
-      const unsyncedEx = unsyncedExercises.find(ex => ex.id === exerciseId || ex.id === exerciseId);
-      if (unsyncedEx && unsyncedEx.id) {
-        return unsyncedEx.id;
-      }
-
-      // Try to find in database by id (primary key)
-      let exDoc = await db.exercises.findOne(exerciseId).exec();
-
-      // If not found by id, try to find by id
-      if (!exDoc) {
-        const exercises = await db.exercises.find({ selector: { id: exerciseId } }).exec();
-        exDoc = exercises[0] || null;
-      }
-
-      if (exDoc && exDoc.id) {
-        return exDoc.id;
-      }
-      return null;
-    };
-
-    // Process sets
-    for (const set of unsyncedSets) {
-      if (!set.id) {
-        // Create - resolve exerciseId
-        let serverExerciseId = await resolveExerciseId(set.exerciseId);
-        if (!serverExerciseId && newExerciseTempIds.has(set.exerciseId)) {
-          serverExerciseId = set.exerciseId; // Use id
-        }
-        
-        if (serverExerciseId) {
-          ops.push({
-            type: 'createSet',
-            id: set.id!,
-            exerciseId: serverExerciseId,
-            position: set.position,
-            reps: set.reps,
-            weightKg: set.weightKg,
-            isWarmup: set.isWarmup,
-          });
-        }
-      } else {
-        // Update
-        ops.push({
-          type: 'updateSet',
-          id: set.id,
-          patch: {
-            position: set.position,
-            reps: set.reps,
-            weightKg: set.weightKg,
-            isWarmup: set.isWarmup,
-          },
-        });
-      }
-    }
-
-    // Process deletions
+    // Deletions first
     for (const doc of deletedDocs) {
-      if (doc.id && doc.collectionName === 'exercises') {
-        ops.push({ type: 'deleteExercise', id: doc.id });
-      } else if (doc.id && doc.collectionName === 'sets') {
-        ops.push({ type: 'deleteSet', id: doc.id });
+      if (doc.serverId) { // Only delete if it was ever synced
+        const type = doc.collectionName === 'exercises' ? 'deleteExercise' : 'deleteSet';
+        ops.push({ type, id: doc.serverId });
       }
     }
 
-    if (ops.length === 0) {
-      set({ isSyncing: false });
-      get().setSaving('idle', 'manual');
-      return;
-    }
-
-    // Send to server
-    const clientEpoch = Number(localStorage.getItem('saveEpoch') || '0');
-    const res = await api.saveBatch(ops, uuidv4(), clientEpoch);
-
-    // Track all documents that were synced (by id)
-    const syncedExerciseTempIds = new Set<string>();
-    const syncedSetTempIds = new Set<string>();
-
-    // Apply server mappings and mark newly created documents as synced
-    if (res.mapping) {
-      if (res.mapping.exercises) {
-        for (const item of res.mapping.exercises) {
-          const doc = await db.exercises.findOne(item.id).exec();
-          if (doc) {
-            await doc.incrementalModify((old: Exercise) => ({ ...old, id: item.id, isSynced: false }));
-            syncedExerciseTempIds.add(item.id);
-          }
-        }
-      }
-      if (res.mapping.sets) {
-        for (const item of res.mapping.sets) {
-          const doc = await db.sets.findOne(item.id).exec();
-          if (doc) {
-            await doc.incrementalModify((old: Set) => ({ ...old, id: item.id, isSynced: false }));
-            syncedSetTempIds.add(item.id);
-          }
-        }
-      }
-    }
-
-    // Mark all synced documents as synced
-    // For days - mark all that were in ops or have IDs
+    // Creations (ordered by dependency)
+    // Days
     for (const day of unsyncedDays) {
-      if (day.id) {
-        const dayDoc = await db.workout_days.findOne(day.id).exec();
-        if (dayDoc) {
-          await dayDoc.incrementalModify((old: WorkoutDay) => ({ ...old, isSynced: false }));
-        }
+      if (!day.serverId) { // It's a new day
+        ops.push({ type: 'createDay', localId: day.id, workoutDate: day.workoutDate, timezone: day.timezone || '' });
       }
     }
-
-    // For exercises - mark all that were synced (either had ID or got one from mapping)
+    // Exercises
     for (const ex of unsyncedExercises) {
-      // Mark as synced if it already had an ID, or if it was in the mapping
-      if (ex.id || syncedExerciseTempIds.has(ex.id!)) {
-        const doc = await db.exercises.findOne(ex.id).exec();
-        if (doc) {
-          await doc.incrementalModify((old: Exercise) => ({ ...old, isSynced: false }));
-        }
+      if (!ex.serverId) { // It's a new exercise
+        ops.push({ type: 'createExercise', localId: ex.id, dayId: `temp:${ex.dayId}`, catalogId: ex.catalogId!, position: ex.position, comment: ex.comment });
       }
     }
-
-    // For sets - mark all that were synced (either had ID or got one from mapping)
+    // Sets
     for (const set of unsyncedSets) {
-      // Mark as synced if it already had an ID, or if it was in the mapping
-      if (set.id || syncedSetTempIds.has(set.id!)) {
-        const doc = await db.sets.findOne(set.id).exec();
-        if (doc) {
-          await doc.incrementalModify((old: Set) => ({ ...old, isSynced: false }));
-        }
+      if (!set.serverId) { // It's a new set
+        const parentEx = await db.exercises.findOne(set.exerciseId).exec();
+        // Parent exercise could be already on server or new in this batch
+        const exerciseIdRef = parentEx?.serverId ? parentEx.serverId : `temp:${set.exerciseId}`;
+        ops.push({ type: 'createSet', localId: set.id, exerciseId: exerciseIdRef, position: set.position, reps: set.reps, weightKg: set.weightKg, isWarmup: set.isWarmup });
       }
     }
 
-    // Clear deleted documents
-    await db.deleted_documents.find().remove();
-
-    // Update epoch
-    localStorage.setItem('saveEpoch', String(res.serverEpoch));
-
-    // Mark as saved
-    get().setSaving('saved', 'manual');
-
-  } catch (error: any) {
-    // Handle stale epoch
-    if (error.code === 'stale_epoch' && error.serverEpoch) {
-      localStorage.setItem('saveEpoch', String(error.serverEpoch));
-      await db.deleted_documents.find().remove();
+    // Updates
+    for (const day of unsyncedDays) {
+        if (day.serverId) {
+          ops.push({ type: 'updateDay', dayId: day.serverId, isRestDay: day.isRestDay });
+        }
+      }
+    for (const ex of unsyncedExercises) {
+      if (ex.serverId) {
+        ops.push({ type: 'updateExercise', id: ex.serverId, patch: { comment: ex.comment, position: ex.position } });
+      }
     }
-    get().setSaving('error', 'manual');
-    throw error;
+    for (const set of unsyncedSets) {
+      if (set.serverId) {
+        ops.push({ type: 'updateSet', id: set.serverId, patch: { reps: set.reps, weightKg: set.weightKg, isWarmup: set.isWarmup, position: set.position } });
+      }
+    }
+
+    // 3. Send to server if there are operations
+    if (ops.length > 0) {
+      const res = await api.save(ops);
+
+      // 4. Process results and update local DB
+      const mapping = res.mapping;
+      for (const item of mapping.exercises) {
+        const doc = await db.exercises.findOne(item.localId).exec();
+        if (doc) await doc.patch({ serverId: item.id, isSynced: true });
+      }
+      for (const item of mapping.sets) {
+        const doc = await db.sets.findOne(item.localId).exec();
+        if (doc) await doc.patch({ serverId: item.id, isSynced: true });
+      }
+      
+      // Mark updated items as synced
+      const dayDocsToSync = unsyncedDays.filter(d => d.serverId).map(d => ({...d.toJSON(), isSynced: true}));
+      if (dayDocsToSync.length > 0) await db.workout_days.bulkUpsert(dayDocsToSync);
+
+      const exDocsToSync = unsyncedExercises.filter(e => e.serverId).map(e => ({...e.toJSON(), isSynced: true}));
+      if (exDocsToSync.length > 0) await db.exercises.bulkUpsert(exDocsToSync);
+      
+      const setDocsToSync = unsyncedSets.filter(s => s.serverId).map(s => ({...s.toJSON(), isSynced: true}));
+      if (setDocsToSync.length > 0) await db.sets.bulkUpsert(setDocsToSync);
+
+      // Clear synced deletions
+      await db.deleted_documents.bulkRemove(deletedDocs.map(d => d.id));
+    }
+
+    set({ saveStatus: 'saved' });
+  } catch (error) {
+    console.error('Sync failed:', error);
+    set({ saveStatus: 'error' });
   } finally {
     set({ isSyncing: false });
   }

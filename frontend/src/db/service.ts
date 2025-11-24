@@ -77,14 +77,15 @@ const createDatabase = async () => {
   // Add a hook to generate a id for new documents
   Object.values(db.collections).forEach((collection) => {
     collection.preInsert((docData) => {
-      if (!docData.id) {
+      // The 'id' for a deleted_document is the id of the original document, so we don't generate one.
+      if (collection.name !== 'deleted_documents' && !docData.id) {
         docData.id = uuidv4();
       }
       
       // Skip adding isSynced, createdAt, updatedAt for deleted_documents collection
       if (collection.name !== 'deleted_documents') {
         if (docData.isSynced === undefined) {
-          docData.isSynced = true;
+          docData.isSynced = false;
         }
         const now = new Date().toISOString();
         if (!docData.createdAt) {

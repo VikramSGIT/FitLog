@@ -17,7 +17,6 @@ type SaveMode = 'auto' | 'manual';
 
 type DayWithExercises = {
   id: string;
-  id?: string;
   exercises: Exercise[];
   isRestDay: boolean;
   workoutDate: string;
@@ -51,7 +50,6 @@ export type WorkoutState = {
   init: (userId: string) => void;
   loadDay: (date: string) => Promise<void>;
   addExercise: (catalogId: string, name: string) => Promise<string>;
-  queueCreateExercise: (params: { dayId: string; catalogId: string; nameDisplay: string; position: number }) => Promise<void>;
   updateExercise: (id: string, patch: Partial<Exercise>) => Promise<void>;
   deleteExercise: (id: string) => Promise<void>;
   addSet: (exerciseTempId: string) => Promise<void>;
@@ -113,8 +111,6 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => {
     loadDay: (date: string) => loadDay(date, get, set),
     
     addExercise: (catalogId: string, name: string) => crud.addExercise(catalogId, name, get),
-    
-    queueCreateExercise: (params: { dayId: string; catalogId: string; nameDisplay: string; position: number }) => crud.queueCreateExercise(params, get),
 
     updateExercise: async (id, patch) => {
         await crud.updateExercise(id, patch);

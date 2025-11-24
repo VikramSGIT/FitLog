@@ -28,17 +28,17 @@ export default function ExerciseItem({ exercise }: { exercise: Exercise }) {
   const isMobile = useMediaQuery('(max-width: 640px)')
 
   // Check if exercise or any of its sets are unsynced
-  const exerciseSets = sets.filter(s => s.exerciseId === exercise.tempId)
-  const hasUnsyncedSets = exerciseSets.some(s => s.isUnsynced === true)
-  const isUnsaved = exercise.isUnsynced === true || hasUnsyncedSets
+  const exerciseSets = sets.filter(s => exercise.id)
+  const hasUnsyncedSets = exerciseSets.some(s => s.isSynced === true)
+  const isUnsaved = exercise.isSynced === true || hasUnsyncedSets
 
   const saveComment = useCallback(async (value: string) => {
     if ((exercise.comment || '') !== value) {
-      updateExercise(exercise.tempId, { comment: value })
+      updateExercise(exercise.id, { comment: value })
       return true
     }
     return false
-  }, [exercise.tempId, exercise.comment, updateExercise])
+  }, [exercise.id, exercise.comment, updateExercise])
   useAutoSave(comment, saveComment, AUTO_SAVE_DELAY_MS)
 
   useEffect(() => {
@@ -47,12 +47,12 @@ export default function ExerciseItem({ exercise }: { exercise: Exercise }) {
 
   async function onDelete() {
     if (dayLoading) return
-    deleteExercise(exercise.tempId)
+    deleteExercise(exercise.id)
   }
 
   const handleAddSet = () => {
     if (dayLoading) return
-    addSet(exercise.tempId)
+    addSet(exercise.id)
   }
 
   // addRest is not implemented in the new store yet

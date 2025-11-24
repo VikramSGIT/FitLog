@@ -1,14 +1,13 @@
 import { RxJsonSchema, RxDocument } from 'rxdb';
 
-// Using a composite key for workout_days to ensure uniqueness per user/date
-// However, RxDB doesn't directly support composite primary keys in the same way a relational DB does.
-// The 'id' will be a concatenation of user_id and workout_date, e.g., `${userId}_${workoutDate}`.
-// For unsynced workout days, we can use a temporary ID.
+// This schema uses a stable, client-generated 'id' as the primary key.
+// 'serverId' will store the ID from the backend once the document is synced.
+// 'isSynced' is a boolean flag to track the sync status.
 
 export type WorkoutDay = {
-  id: string; // This will be the backend ID. Can be null if not synced.
-  id?: string; // UUID generated on the client. Primary for local documents.
-  isSynced?: boolean;
+  id: string; // Stable, client-generated UUID, Primary Key
+  serverId: string | null;
+  isSynced: boolean;
   userId: string;
   workoutDate: string; // ISO 8601 date string 'YYYY-MM-DD'
   timezone?: string;
@@ -19,10 +18,10 @@ export type WorkoutDay = {
 };
 
 export type Exercise = {
-  id: string; // Backend ID, can be null
-  id?: string; // Client-side UUID
-  isSynced?: boolean;
-  dayId: string; // Corresponds to WorkoutDay's id or id
+  id: string; // Stable, client-generated UUID, Primary Key
+  serverId: string | null;
+  isSynced: boolean;
+  dayId: string; // Corresponds to WorkoutDay's stable 'id'
   catalogId?: string;
   name: string;
   position: number;
@@ -32,10 +31,10 @@ export type Exercise = {
 };
 
 export type Set = {
-  id: string; // Backend ID, can be null
-  id?: string; // Client-side UUID
-  isSynced?: boolean;
-  exerciseId: string; // Corresponds to Exercise's id or id
+  id: string; // Stable, client-generated UUID, Primary Key
+  serverId: string | null;
+  isSynced: boolean;
+  exerciseId: string; // Corresponds to Exercise's stable 'id'
   userId: string;
   workoutDate: string; // ISO 8601 date string 'YYYY-MM-DD'
   position: number;
@@ -51,20 +50,16 @@ export type Set = {
   updatedAt: string; // ISO 8601 timestamp
 };
 
-// RxDB requires a primary key to be defined. We will use `id` as the primary
-// key for local operations and `id` for synced documents.
-// When a document is synced, the backend `id` will be saved.
-
 export const workoutDaySchema: RxJsonSchema<WorkoutDay> = {
   title: 'workout day schema',
-  version: 0,
+  version: 1, // Incremented version
   description: 'describes a single day of a workout',
   primaryKey: 'id',
   type: 'object',
   properties: {
-    id: { type: ['string', 'null'] },
     id: { type: 'string', maxLength: 36 },
-    isSynced: { type: 'boolean' },
+    serverId: { type: ['string', 'null'], index: true },
+    isSynced: { type: 'boolean', default: false, index: true },
     userId: { type: 'string', final: true, maxLength: 36 },
     workoutDate: { type: 'string', format: 'date', maxLength: 10 },
     timezone: { type: 'string' },
@@ -74,19 +69,19 @@ export const workoutDaySchema: RxJsonSchema<WorkoutDay> = {
     updatedAt: { type: 'string', format: 'date-time' },
   },
   required: ['id', 'userId', 'workoutDate', 'isRestDay', 'createdAt', 'updatedAt', 'isSynced'],
-  indexes: ['workoutDate', 'isSynced', ['userId', 'workoutDate']],
+  indexes: ['workoutDate', 'isSynced', 'serverId', ['userId', 'workoutDate']],
 };
 
 export const exerciseSchema: RxJsonSchema<Exercise> = {
   title: 'exercise schema',
-  version: 0,
+  version: 1, // Incremented version
   description: 'describes an exercise within a workout day',
   primaryKey: 'id',
   type: 'object',
   properties: {
-    id: { type: ['string', 'null'] },
     id: { type: 'string', maxLength: 36 },
-    isSynced: { type: 'boolean' },
+    serverId: { type: ['string', 'null'], index: true },
+    isSynced: { type: 'boolean', default: false, index: true },
     dayId: { type: 'string', ref: 'workout_days', maxLength: 36 },
     catalogId: { type: 'string' },
     name: { type: 'string' },
@@ -96,19 +91,19 @@ export const exerciseSchema: RxJsonSchema<Exercise> = {
     updatedAt: { type: 'string', format: 'date-time' },
   },
   required: ['id', 'dayId', 'name', 'position', 'createdAt', 'updatedAt', 'isSynced'],
-  indexes: ['dayId', 'position', 'isSynced'],
+  indexes: ['dayId', 'position', 'isSynced', 'serverId'],
 };
 
 export const setSchema: RxJsonSchema<Set> = {
   title: 'set schema',
-  version: 0,
+  version: 1, // Incremented version
   description: 'describes a set within an exercise',
   primaryKey: 'id',
   type: 'object',
   properties: {
-    id: { type: ['string', 'null'] },
     id: { type: 'string', maxLength: 36 },
-    isSynced: { type: 'boolean' },
+    serverId: { type: ['string', 'null'], index: true },
+    isSynced: { type: 'boolean', default: false, index: true },
     exerciseId: { type: 'string', ref: 'exercises', maxLength: 36 },
     userId: { type: 'string', maxLength: 36 },
     workoutDate: { type: 'string', format: 'date', maxLength: 10 },
@@ -137,7 +132,7 @@ export const setSchema: RxJsonSchema<Set> = {
     'updatedAt',
     'isSynced',
   ],
-  indexes: ['exerciseId', 'position', 'isSynced', 'workoutDate'],
+  indexes: ['exerciseId', 'position', 'isSynced', 'workoutDate', 'serverId'],
 };
 
 export type WorkoutDayDoc = RxDocument<WorkoutDay>;
@@ -145,26 +140,26 @@ export type ExerciseDoc = RxDocument<Exercise>;
 export type SetDoc = RxDocument<Set>;
 
 export type DeletedDocument = {
-  id: string | null;
-  id: string;
+  id: string; // The local UUID of the deleted document
+  serverId: string | null; // The server ID, if it was synced
   collectionName: string;
   deletedAt: string;
 };
 
 export const deletedDocumentSchema: RxJsonSchema<DeletedDocument> = {
   title: 'deleted document schema',
-  version: 0,
+  version: 1, // Incremented version
   description: 'stores information about deleted documents for syncing',
   primaryKey: 'id',
   type: 'object',
   properties: {
-    id: { type: ['string', 'null'] },
     id: { type: 'string', maxLength: 36 },
+    serverId: { type: ['string', 'null'] },
     collectionName: { type: 'string' },
-    deletedAt: { type: 'string', format: 'date-time', maxLength: 29 },
+    deletedAt: { type: 'string', format: 'date-time' },
   },
   required: ['id', 'collectionName', 'deletedAt'],
-  indexes: ['deletedAt'],
+  indexes: ['deletedAt', 'serverId'],
 };
 
 export type DeletedDocumentDoc = RxDocument<DeletedDocument>;

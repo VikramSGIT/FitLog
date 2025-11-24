@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { useWorkoutStore } from '@/store/useWorkoutStore'
 
+const DEBOUNCE_DELAY_MS = 2000;
+
 // onSave should return true if it actually persisted changes, false if there was nothing to save
-export function useAutoSave<T>(value: T, onSave: (value: T) => Promise<boolean>, delay = 60000) {
+export function useDebouncedSaveToRxDB<T>(value: T, onSave: (value: T) => Promise<boolean>) {
   const setSaving = useWorkoutStore((state) => state.setSaving)
   const registerAutoSave = useWorkoutStore((state) => state.registerAutoSave)
   const timer = useRef<number | null>(null)
@@ -47,14 +49,14 @@ export function useAutoSave<T>(value: T, onSave: (value: T) => Promise<boolean>,
     if (timer.current) window.clearTimeout(timer.current)
     timer.current = window.setTimeout(() => {
       timer.current = null
-      triggerSave('auto', true).catch(() => {
+      triggerSave('auto', false).catch(() => {
         // errors handled inside triggerSave via setSaving
       })
-    }, delay)
+    }, DEBOUNCE_DELAY_MS)
     return () => {
       if (timer.current) window.clearTimeout(timer.current)
     }
-  }, [value, delay, triggerSave])
+  }, [value, triggerSave])
 
   useEffect(() => {
     const flush = async () => {
@@ -62,17 +64,12 @@ export function useAutoSave<T>(value: T, onSave: (value: T) => Promise<boolean>,
         window.clearTimeout(timer.current)
         timer.current = null
       }
-      // Since we can't await triggerSave here without making flush async in a way that
-      // useWorkoutStore doesn't support, we'll replicate the core logic of triggerSave.
-      // This is a simplified version; a more robust solution might involve a more complex state management.
-      if (saving.current) return false // Or handle as per requirements
+      if (saving.current) return false
       saving.current = true
       try {
         const didSave = await onSaveRef.current(latestValue.current)
-        // Note: this flush path does not update the global saving status.
         return didSave
       } catch (err) {
-        // Handle or log error appropriately
         return false
       } finally {
         saving.current = false

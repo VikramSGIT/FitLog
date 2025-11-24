@@ -2,14 +2,13 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { api, ExerciseEntry, RestPeriod, WorkoutSet } from '@/api/client'
 import { Exercise, Set } from '@/db/schema'
 import { useWorkoutStore } from '@/store/useWorkoutStore'
-import { useAutoSave } from '@/hooks/useAutoSave'
 import { ActionIcon, Group, Paper, Stack, Text, TextInput, Tooltip, useMantineTheme } from '@mantine/core'
 import { IconTrash } from '@tabler/icons-react'
 import { DEFAULT_SURFACES, ThemeSurfaces } from '@/theme'
-import { AUTO_SAVE_DELAY_MS } from '@/config'
+import { useDebouncedSaveToRxDB } from '@/hooks/useDebouncedSaveToRxDB'
 
 function SetRow({ set, multiplier, baseWeightKg }: { set: Set; multiplier?: number | null; baseWeightKg?: number | null }) {
-  const { updateSet, deleteSet, isLoading: dayLoading } = useWorkoutStore()
+  const { updateSet, deleteSet, isLoading: dayLoading, setSetDirty } = useWorkoutStore()
   const [repsInput, setRepsInput] = useState<string>(() => String(set.reps))
   const [weightInput, setWeightInput] = useState<string>(() => String(set.weightKg))
   const theme = useMantineTheme()
@@ -22,6 +21,15 @@ function SetRow({ set, multiplier, baseWeightKg }: { set: Set; multiplier?: numb
   useEffect(() => {
     setWeightInput(String(set.weightKg))
   }, [set.weightKg])
+
+  useEffect(() => {
+    const repsValue = repsInput.trim() === '' ? null : Number.isFinite(Number(repsInput)) ? Math.round(Number(repsInput)) : null;
+    const weightValue = weightInput.trim() === '' ? null : Number.isFinite(Number(weightInput)) ? Number(weightInput) : null;
+    
+    const isDirty = repsValue !== set.reps || weightValue !== set.weightKg;
+    setSetDirty(set.tempId, isDirty);
+
+  }, [repsInput, weightInput, set.reps, set.weightKg, set.tempId, setSetDirty]);
 
   const parsed = useMemo(() => {
     const repsValue = repsInput.trim() === '' ? null : Number.isFinite(Number(repsInput)) ? Math.round(Number(repsInput)) : null
@@ -42,16 +50,22 @@ function SetRow({ set, multiplier, baseWeightKg }: { set: Set; multiplier?: numb
   }, [weightInput, multiplier, baseWeightKg])
 
   const save = useCallback(async (payload: { reps: number | null; weight: number | null }) => {
+    const currentSet = useWorkoutStore.getState().sets.find(s => s.tempId === set.tempId);
+    // If set has been deleted, we can't save.
+    if (!currentSet) {
+      return false;
+    }
+
     const updates: Partial<Pick<Set, 'reps' | 'weightKg'>> = {}
     if (payload.reps !== null && payload.reps > 0) {
       const roundedReps = Math.round(payload.reps)
-      if (roundedReps !== set.reps) {
+      if (roundedReps !== currentSet.reps) {
         updates.reps = roundedReps
       }
     }
     if (payload.weight !== null && payload.weight >= 0) {
       const roundedWeight = Math.round(payload.weight * 100) / 100
-      if (roundedWeight !== set.weightKg) {
+      if (roundedWeight !== currentSet.weightKg) {
         updates.weightKg = roundedWeight
       }
     }
@@ -60,9 +74,9 @@ function SetRow({ set, multiplier, baseWeightKg }: { set: Set; multiplier?: numb
     }
     updateSet(set.tempId, updates)
     return true
-  }, [updateSet, set.tempId, set.reps, set.weightKg])
+  }, [updateSet, set.tempId])
 
-  useAutoSave(parsed, async (v) => save(v), AUTO_SAVE_DELAY_MS)
+  useDebouncedSaveToRxDB(parsed, async (v) => save(v))
 
   const onDelete = useCallback(async () => {
     if (dayLoading) return
@@ -185,5 +199,3 @@ export default function SetList({ exercise }: { exercise: Exercise }) {
     </Stack>
   )
 }
-
-

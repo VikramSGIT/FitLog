@@ -78,8 +78,10 @@ export default function HeaderBar({
     sets,
     deletedDocumentsCount,
     loadDay,
+    dirtySetIds,
   } = useWorkoutStore()
   const hasPendingChanges =
+    dirtySetIds.size > 0 ||
     day?.isUnsynced ||
     exercises.some(e => e.isUnsynced === true) ||
     sets.some(s => s.isUnsynced === true) ||

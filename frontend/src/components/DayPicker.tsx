@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
-import { api } from '@/api/client'
+import { useCallback, useEffect, useState } from 'react'
 import { useWorkoutStore } from '@/store/useWorkoutStore'
 import { format } from 'date-fns'
 import { Button, Group, Loader, Modal, Stack, Text, Title, Tooltip, useMantineTheme } from '@mantine/core'
@@ -20,16 +19,8 @@ function toInputDate(value?: string): string {
 }
 
 export default function DayPicker() {
-  const day = useWorkoutStore((s) => s.day)
-  const setDay = useWorkoutStore((s) => s.setDay)
-  const setDayLoading = useWorkoutStore((s) => s.setDayLoading)
-  const flush = useWorkoutStore((s) => s.flush)
-  const saving = useWorkoutStore((s) => s.saving)
-  const lastSaveMode = useWorkoutStore((s) => s.lastSaveMode)
-  const lastSavedAt = useWorkoutStore((s) => s.lastSavedAt)
-  const dayLoading = useWorkoutStore((s) => s.dayLoading)
+  const { day, dayLoading, ensureDay, updateDay } = useWorkoutStore()
   const [selectedDate, setSelectedDate] = useState<string>(() => toInputDate(day?.workoutDate))
-  const loadingRef = useRef<string | null>(null)
   const [restUpdating, setRestUpdating] = useState(false)
   const [restDayModalOpen, setRestDayModalOpen] = useState(false)
   const theme = useMantineTheme()
@@ -57,37 +48,6 @@ export default function DayPicker() {
     setSelectedDate(toInputDate(day?.workoutDate))
   }, [day?.workoutDate])
 
-  const ensureDay = useCallback(
-    async (date: string) => {
-      if (!date) return
-      if (loadingRef.current === date) return
-      loadingRef.current = date
-      setDayLoading(true)
-      try {
-        const res = await api.getDayByDate(date, true)
-        if (loadingRef.current !== date) {
-          return
-        }
-        if ('day' in (res as any) && (res as any).day === null) {
-          const created = await api.createDay(date)
-          if (loadingRef.current === date) {
-            setDay(created)
-          }
-        } else {
-          setDay(res as any)
-        }
-      } catch (err) {
-        console.error('Failed to load workout day', err)
-      } finally {
-        if (loadingRef.current === date) {
-          loadingRef.current = null
-          setDayLoading(false)
-        }
-      }
-    },
-    [setDay, setDayLoading]
-  )
-
   const onChangePicker = useCallback(
     async (value: Date | null) => {
       if (!value) return
@@ -98,58 +58,30 @@ export default function DayPicker() {
     [ensureDay]
   )
 
-  const toggleRestDay = useCallback(async () => {
+  const toggleRestDay = useCallback(async (confirm = false) => {
     if (!day || dayLoading) return
-    if (!day.isRestDay) {
+    if (!day.isRestDay && !confirm) {
       const hasExercises = Array.isArray(day.exercises) && day.exercises.length > 0
       if (hasExercises) {
         setRestDayModalOpen(true)
         return
       }
     }
-    setRestUpdating(true)
-    setDayLoading(true)
-    try {
-      const updated = await api.updateDay(day.id, { isRestDay: !day.isRestDay })
-      setDay(updated)
-    } catch (err) {
-      console.error('Failed to toggle rest day', err)
-    } finally {
-      setDayLoading(false)
-      setRestUpdating(false)
-    }
-  }, [day, dayLoading, setDay, setDayLoading])
-
-  const confirmRestDay = useCallback(async () => {
-    if (!day || dayLoading) return
     setRestDayModalOpen(false)
     setRestUpdating(true)
-    setDayLoading(true)
     try {
-      const updated = await api.updateDay(day.id, { isRestDay: !day.isRestDay })
-      setDay(updated)
+      await updateDay(day.tempId!, { isRestDay: !day.isRestDay })
     } catch (err) {
       console.error('Failed to toggle rest day', err)
     } finally {
-      setDayLoading(false)
       setRestUpdating(false)
     }
-  }, [day, dayLoading, setDay, setDayLoading])
-
-  // Save status messaging moved to the HeaderBar button; no local message here.
-
-  const onManualSave = useCallback(() => {
-    if (saving === 'saving') return
-    flush('manual').catch(() => {
-      // flushAutoSaves sets saving state on error
-    })
-  }, [flush, saving])
+  }, [day, dayLoading, updateDay])
 
   useEffect(() => {
     const currentDate = day?.workoutDate ? toInputDate(day.workoutDate) : null
     if (!selectedDate) return
     if (currentDate === selectedDate) return
-    if (loadingRef.current === selectedDate) return
     ensureDay(selectedDate)
   }, [day?.workoutDate, ensureDay, selectedDate])
 
@@ -168,7 +100,7 @@ export default function DayPicker() {
               <Button
                 radius="md"
                 leftSection={day.isRestDay ? <IconSunHigh size={18} /> : <IconMoonStars size={18} />}
-                onClick={toggleRestDay}
+                onClick={() => toggleRestDay()}
                 disabled={restUpdating || dayLoading}
                 style={restToggleStyles}
               >

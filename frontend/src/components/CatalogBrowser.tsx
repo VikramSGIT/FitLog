@@ -1,12 +1,10 @@
-import React, { useEffect, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
-import { api, CatalogItem } from '@/api/client'
-import { useWorkoutStore } from '@/store/useWorkoutStore'
+import React, { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useCatalogSearch } from '@/hooks/useCatalogSearch'
+import CatalogItemCard from './CatalogItem'
 import {
   ActionIcon,
   Badge,
-  Button,
-  Card,
   Group,
   Loader,
   Pagination,
@@ -22,17 +20,14 @@ import {
 } from '@mantine/core'
 import {
   IconSearch,
-  IconPlus,
-  IconArrowUpRight,
-  IconBarbell,
-  IconX,
-  IconAdjustments,
   IconArrowLeft,
-  IconPencil
+  IconAdjustments,
+  IconX,
+  IconBarbell
 } from '@tabler/icons-react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useMediaQuery } from '@mantine/hooks'
-import { DEFAULT_SURFACES, ThemeSurfaces } from '@/theme'
+import { DEFAULT_SURFACES, ThemeSurfaces, useThemePreset } from '@/theme'
 
 type CatalogBrowserProps = {
   embedded?: boolean
@@ -43,298 +38,38 @@ type CatalogBrowserProps = {
 const toSelectOptions = (values: string[]) => values.map((value) => ({ value, label: value }))
 
 export default function CatalogBrowser({ embedded = false, onClose, headerAddon }: CatalogBrowserProps) {
-  const day = useWorkoutStore((s) => s.day)
-  const queueCreateExercise = useWorkoutStore((s) => s.queueCreateExercise)
-  const dayLoading = useWorkoutStore((s) => s.dayLoading)
-  const isRestDay = day?.isRestDay ?? false
   const navigate = useNavigate()
   const theme = useMantineTheme()
+  const { preset } = useThemePreset()
   const isMobile = useMediaQuery('(max-width: 640px)')
   const surfaces = (theme.other?.surfaces as ThemeSurfaces) ?? DEFAULT_SURFACES
   const accentGradient = (theme.other?.accentGradient as string) ?? 'linear-gradient(135deg, #8f5afc 0%, #5197ff 100%)'
   const buttonTextColor = '#0f172a'
   const baseTextColor =
-    (theme.other?.textColor as string) ?? (theme.colorScheme === 'light' ? '#0f172a' : '#f8fafc')
-  const [facets, setFacets] = useState<{ types: string[]; bodyParts: string[]; equipment: string[]; levels: string[]; muscles: string[] }>({
-    types: [],
-    bodyParts: [],
-    equipment: [],
-    levels: [],
-    muscles: []
-  })
-  const [searchParams, setSearchParams] = useSearchParams()
-  const getInitial = (key: string, fallback = '') =>
-    embedded ? fallback : (searchParams.get(key) || fallback)
-  const getInitialNumber = (key: string, fallback: number) => {
-    if (embedded) return fallback
-    const str = searchParams.get(key)
-    const num = str ? Number(str) : NaN
-    return Number.isNaN(num) || num <= 0 ? fallback : num
-  }
-  const [q, setQ] = useState(getInitial('q'))
-  const [type, setType] = useState(getInitial('type'))
-  const [bodyPart, setBodyPart] = useState(getInitial('bodyPart'))
-  const [equipment, setEquipment] = useState(getInitial('equipment'))
-  const [level, setLevel] = useState(getInitial('level'))
-  const [muscle, setMuscle] = useState(getInitial('muscle'))
-  const [page, setPage] = useState(getInitialNumber('page', 1))
-  const [pageSize] = useState(getInitialNumber('pageSize', embedded ? 10 : 20))
-  const [loading, setLoading] = useState(false)
-  const [items, setItems] = useState<CatalogItem[]>([])
-  const [total, setTotal] = useState(0)
+    (theme.other?.textColor as string) ?? (preset.colorScheme === 'light' ? '#0f172a' : '#f8fafc')
+  
+  const {
+    q, setQ,
+    type, setType,
+    bodyPart, setBodyPart,
+    equipment, setEquipment,
+    level, setLevel,
+    muscle, setMuscle,
+    page, setPage,
+    pageSize,
+    loading,
+    items,
+    total,
+    facets,
+  } = useCatalogSearch(embedded)
+  
   const [showFilters, setShowFilters] = useState(false)
-  const [imageErrors, setImageErrors] = useState<Set<string>>(new Set())
-
-  useEffect(() => {
-    api.getCatalogFacets()
-      .then((res) => {
-        setFacets({
-          types: Array.isArray((res as any).types) ? (res as any).types : [],
-          bodyParts: Array.isArray((res as any).bodyParts) ? (res as any).bodyParts : [],
-          equipment: Array.isArray((res as any).equipment) ? (res as any).equipment : [],
-          levels: Array.isArray((res as any).levels) ? (res as any).levels : [],
-          muscles: Array.isArray((res as any).muscles) ? (res as any).muscles : []
-        })
-      })
-      .catch(() => setFacets({ types: [], bodyParts: [], equipment: [], levels: [], muscles: [] }))
-  }, [])
-
-  useEffect(() => {
-    const t = setTimeout(() => {
-      setLoading(true)
-      const next = new URLSearchParams()
-      if (q) next.set('q', q)
-      if (type) next.set('type', type)
-      if (bodyPart) next.set('bodyPart', bodyPart)
-      if (equipment) next.set('equipment', equipment)
-      if (level) next.set('level', level)
-      if (muscle) next.set('muscle', muscle)
-      next.set('page', String(page))
-      next.set('pageSize', String(pageSize))
-      if (!embedded) {
-        setSearchParams(next)
-      }
-      api
-        .searchCatalog({ q, type, bodyPart, equipment, level, muscle, page, pageSize, sort: 'name_asc' })
-        .then((res) => {
-          const safeItems = Array.isArray((res as any).items) ? (res as any).items : []
-          setItems(safeItems as CatalogItem[])
-          setTotal(typeof (res as any).total === 'number' ? (res as any).total : 0)
-        })
-        .catch(() => {
-          setItems([])
-          setTotal(0)
-        })
-        .finally(() => setLoading(false))
-    }, 400)
-    return () => clearTimeout(t)
-  }, [q, type, bodyPart, equipment, level, muscle, page, pageSize, setSearchParams])
-
-  const canAddToDay = !!day && !dayLoading && !isRestDay
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
-
-  async function addToDay(item: CatalogItem) {
-    if (!day) {
-      alert('Pick a day first on the home page.')
-      return
-    }
-    if (dayLoading) {
-      alert('Please wait for the day to finish loading before adding exercises.')
-      return
-    }
-    if (day.isRestDay) {
-      alert('This day is marked as a rest day. Switch back to a training day to add exercises.')
-      return
-    }
-    const exercises = Array.isArray(day.exercises) ? day.exercises : []
-    const position = (exercises[exercises.length - 1]?.position ?? 0) + 1
-    queueCreateExercise({ dayId: day.id, catalogId: item.id, nameDisplay: item.name, position })
-    if (embedded) {
-      onClose?.()
-    }
-  }
-
-  function handleEdit(itemId: string) {
-    if (embedded) {
-      onClose?.()
-    }
-    navigate(`/catalog/${itemId}/edit`)
-  }
 
   const cards = (
     <AnimatePresence initial={false}>
-      {(Array.isArray(items) ? items : []).map((it) => (
-        <motion.div
-          key={it.id}
-          role="listitem"
-          initial={{ opacity: 0, y: 18 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -8 }}
-          transition={{ duration: 0.2 }}
-        >
-          <Card
-            withBorder
-            radius={isMobile ? 'md' : 'lg'}
-            padding={isMobile ? 'sm' : 'lg'}
-            onClick={embedded ? undefined : (e) => {
-              // Only navigate if click is not on an interactive element
-              const target = e.target as HTMLElement
-              if (target.closest('button, [role="button"], a')) {
-                return
-              }
-              navigate(`/catalog/${it.id}/details`)
-            }}
-            onTouchEnd={embedded ? undefined : (e) => {
-              // Only navigate if touch is not on an interactive element
-              const target = e.target as HTMLElement
-              if (target.closest('button, [role="button"], a')) {
-                return
-              }
-              e.preventDefault()
-              navigate(`/catalog/${it.id}/details`)
-            }}
-            style={{
-              backdropFilter: 'none',
-              background: surfaces.card,
-              borderColor: surfaces.border,
-              cursor: embedded ? 'default' : 'pointer',
-              pointerEvents: 'auto',
-              userSelect: 'none',
-              WebkitUserSelect: 'none'
-            }}
-          >
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'minmax(0, 1.6fr) minmax(0, 1fr) auto',
-                alignItems: 'center',
-                gap: isMobile ? 6 : 8,
-                width: '100%'
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, pointerEvents: 'none' }}>
-                {it.hasImage && !imageErrors.has(it.id) && (
-                  <div style={{ width: 56, height: 56, borderRadius: 12, overflow: 'hidden', border: `1px solid ${surfaces.border}`, flexShrink: 0, background: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-                    <img
-                      src={`${import.meta.env.VITE_API_BASE_URL || ''}/api/catalog/entries/${it.id}/image`}
-                      alt={it.name}
-                      style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', pointerEvents: 'none' }}
-                      onError={() => {
-                        setImageErrors((prev) => new Set(prev).add(it.id))
-                      }}
-                    />
-                  </div>
-                )}
-
-                <div
-                  style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 2 : 4, minWidth: 0, flex: 1, pointerEvents: 'none' }}
-                >
-                  <Text fw={600} style={{ whiteSpace: 'normal', overflow: 'visible', textOverflow: 'clip', lineHeight: 1.2, pointerEvents: 'none' }}>
-                    {it.name}
-                  </Text>
-                  <Group 
-                    gap={6} 
-                    wrap="wrap" 
-                    style={{ minWidth: 0, overflow: 'hidden', pointerEvents: 'none' }}
-                  >
-                    {it.type && (
-                      <Badge size={isMobile ? 'xs' : 'sm'} color={theme.primaryColor} variant="light" style={{ pointerEvents: 'none' }}>
-                        {it.type}
-                      </Badge>
-                    )}
-                    {it.bodyPart && (
-                      <Badge size={isMobile ? 'xs' : 'sm'} color="blue" variant="light" style={{ pointerEvents: 'none' }}>
-                        {it.bodyPart}
-                      </Badge>
-                    )}
-                    {it.equipment && (
-                      <Badge size={isMobile ? 'xs' : 'sm'} color="grape" variant="light" style={{ pointerEvents: 'none' }}>
-                        {it.equipment}
-                      </Badge>
-                    )}
-                    {it.level && (
-                      <Badge size={isMobile ? 'xs' : 'sm'} color="cyan" variant="light" style={{ pointerEvents: 'none' }}>
-                        {it.level}
-                      </Badge>
-                    )}
-                  </Group>
-                </div>
-              </div>
-                  <Group gap={isMobile ? 8 : 'sm'} justify="flex-end" onClick={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()}>
-                    {isMobile ? (
-                      <>
-                        <ActionIcon
-                          size="lg"
-                          radius="md"
-                          aria-label="Edit catalog exercise"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleEdit(it.id)
-                          }}
-                          style={{
-                            background: theme.colorScheme === 'light' ? '#ffffff' : surfaces.card,
-                            border: `1px solid ${surfaces.border}`,
-                            color: baseTextColor
-                          }}
-                        >
-                          <IconPencil size={18} />
-                        </ActionIcon>
-                        <ActionIcon
-                          size="lg"
-                          radius="md"
-                          aria-label="Add to day"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            addToDay(it)
-                          }}
-                          disabled={!canAddToDay}
-                          style={{
-                            backgroundImage: accentGradient,
-                            color: buttonTextColor,
-                            border: 'none'
-                          }}
-                        >
-                          <IconPlus size={18} />
-                        </ActionIcon>
-                      </>
-                    ) : (
-                      <>
-                        <Button
-                          variant="outline"
-                          leftSection={<IconPencil size={18} />}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleEdit(it.id)
-                          }}
-                          style={{
-                            background: surfaces.card,
-                            border: `1px solid ${surfaces.border}`,
-                            color: baseTextColor
-                          }}
-                        >
-                          Edit
-                        </Button>
-                        <Button
-                          leftSection={<IconPlus size={18} />}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            addToDay(it)
-                          }}
-                          disabled={!canAddToDay}
-                          style={{
-                            backgroundImage: accentGradient,
-                            color: buttonTextColor,
-                            border: 'none'
-                          }}
-                        >
-                          {isRestDay ? 'Rest day' : dayLoading ? 'Loading...' : 'Add to day'}
-                        </Button>
-                      </>
-                    )}
-                  </Group>
-            </div>
-          </Card>
-        </motion.div>
+      {items.map((item) => (
+        <CatalogItemCard key={item.id} item={item} embedded={embedded} onClose={onClose} />
       ))}
     </AnimatePresence>
   )
@@ -358,7 +93,7 @@ export default function CatalogBrowser({ embedded = false, onClose, headerAddon 
           : undefined
       }
     >
-              {!embedded && !isMobile && (
+      {!embedded && !isMobile && (
         <Stack gap={6}>
           <Group justify="space-between" align="center">
             <Title order={2} style={{ margin: 0 }}>
@@ -406,7 +141,7 @@ export default function CatalogBrowser({ embedded = false, onClose, headerAddon 
             style={{ flex: 1 }}
             styles={{
               input: {
-                background: theme.colorScheme === 'light' ? '#ffffff' : surfaces.card,
+                background: preset.colorScheme === 'light' ? '#ffffff' : surfaces.card,
                 borderColor: surfaces.border,
                 color: baseTextColor
               }
@@ -422,7 +157,7 @@ export default function CatalogBrowser({ embedded = false, onClose, headerAddon 
             aria-label="Toggle filters"
             style={{
               backgroundImage: (q || type || bodyPart || equipment || level || muscle) ? accentGradient : 'none',
-              background: (q || type || bodyPart || equipment || level || muscle) ? undefined : (theme.colorScheme === 'light' ? '#ffffff' : surfaces.card),
+              background: (q || type || bodyPart || equipment || level || muscle) ? undefined : (preset.colorScheme === 'light' ? '#ffffff' : surfaces.card),
               border: `1px solid ${surfaces.border}`,
               color: (q || type || bodyPart || equipment || level || muscle) ? buttonTextColor : baseTextColor
             }}

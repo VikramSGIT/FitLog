@@ -5,7 +5,7 @@ import ExerciseItem from './ExerciseItem'
 import { Alert, Button, Group, Loader, Paper, Stack, Text, Title, Tooltip, useMantineTheme, ActionIcon } from '@mantine/core'
 import { IconPlus, IconMoonStars, IconBarbell } from '@tabler/icons-react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { DEFAULT_SURFACES, ThemeSurfaces } from '@/theme'
+import { DEFAULT_SURFACES, ThemeSurfaces, useThemePreset } from '@/theme'
 import { useMediaQuery } from '@mantine/hooks'
 
 // date picker moved to HeaderBar
@@ -22,9 +22,10 @@ export default function ExerciseList({ onAddFromCatalog }: ExerciseListProps) {
   } = useWorkoutStore()
   
   const theme = useMantineTheme()
+  const { preset } = useThemePreset()
   const surfaces = (theme.other?.surfaces as ThemeSurfaces) ?? DEFAULT_SURFACES
   const accentGradient = (theme.other?.accentGradient as string) ?? 'linear-gradient(135deg, #22d3ee 0%, #6366f1 100%)'
-  const isLight = theme.colorScheme === 'light'
+  const isLight = preset.colorScheme === 'light'
   const ctaTextColor = isLight ? '#0f172a' : '#f8fafc'
   const baseTextColor = (theme.other?.textColor as string) ?? (isLight ? '#0f172a' : '#f8fafc')
   const loadingRef = useRef<string | null>(null)

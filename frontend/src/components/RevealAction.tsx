@@ -1,6 +1,7 @@
 import React, { forwardRef, useState } from 'react'
 import { Loader, useMantineTheme } from '@mantine/core'
 import { AnimatePresence, motion } from 'framer-motion'
+import { useThemePreset } from '@/theme'
 
 type RevealActionProps = {
   icon: React.ReactNode
@@ -17,6 +18,7 @@ type RevealActionProps = {
 const RevealAction = forwardRef<HTMLButtonElement, RevealActionProps>(
   ({ icon, label, ariaLabel, onClick, disabled = false, loading = false, style, textColor, disableReveal = false }, ref) => {
     const theme = useMantineTheme()
+    const { preset } = useThemePreset()
     const [hovered, setHovered] = useState(false)
     const [focused, setFocused] = useState(false)
 
@@ -30,7 +32,7 @@ const RevealAction = forwardRef<HTMLButtonElement, RevealActionProps>(
       minHeight: 36,
       border: 'none',
       background: 'transparent',
-      color: textColor ?? (theme.colorScheme === 'light' ? '#0f172a' : theme.white),
+      color: textColor ?? (preset.colorScheme === 'light' ? '#0f172a' : theme.white),
       cursor: disabled ? 'not-allowed' : 'pointer',
       opacity: disabled ? 0.6 : 1,
       transition: 'background 240ms cubic-bezier(0.22, 1, 0.36, 1), color 240ms cubic-bezier(0.22, 1, 0.36, 1), opacity 200ms ease-out',
@@ -60,7 +62,7 @@ const RevealAction = forwardRef<HTMLButtonElement, RevealActionProps>(
         style={computedStyle}
       >
         <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: 18 }}>
-          {loading ? <Loader size="xs" color={textColor ?? (theme.colorScheme === 'light' ? '#0f172a' : theme.white)} /> : icon}
+          {loading ? <Loader size="xs" color={textColor ?? (preset.colorScheme === 'light' ? '#0f172a' : theme.white)} /> : icon}
         </span>
         <AnimatePresence initial={false} mode="popLayout">
           {reveal && (
@@ -90,5 +92,4 @@ const RevealAction = forwardRef<HTMLButtonElement, RevealActionProps>(
 RevealAction.displayName = 'RevealAction'
 
 export default RevealAction
-
 

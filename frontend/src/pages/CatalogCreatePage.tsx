@@ -21,8 +21,8 @@ import { IconArrowLeft, IconCirclePlus, IconDeviceFloppy, IconPhoto, IconTrash, 
 import { useNavigate, useParams } from 'react-router-dom'
 import { notifications } from '@mantine/notifications'
 import HeaderBar from '@/components/HeaderBar'
-import { DEFAULT_SURFACES, ThemeSurfaces } from '@/theme'
-import { api, CatalogEntryInput } from '@/api/client'
+import { DEFAULT_SURFACES, ThemeSurfaces, useThemePreset } from '@/theme'
+import { getCatalogFacets, getCatalogEntry, updateCatalogEntry, createCatalogEntry, deleteCatalogEntry, logout, CatalogEntryInput } from '@/api'
 import { useWorkoutStore } from '@/store/useWorkoutStore'
 import { useMediaQuery } from '@mantine/hooks'
 
@@ -98,6 +98,7 @@ function includeOption(list: string[], value: string): string[] {
 
 export default function CatalogCreatePage() {
   const theme = useMantineTheme()
+  const { preset } = useThemePreset()
   const navigate = useNavigate()
   const { catalogId } = useParams<{ catalogId?: string }>()
   const isEditMode = Boolean(catalogId)
@@ -106,10 +107,10 @@ export default function CatalogCreatePage() {
     () => (theme.other?.surfaces as ThemeSurfaces) ?? DEFAULT_SURFACES,
     [theme]
   )
-  const baseTextColor = (theme.other?.textColor as string) ?? (theme.colorScheme === 'light' ? '#0f172a' : '#f8fafc')
+    const baseTextColor = (theme.other?.textColor as string) ?? (preset.colorScheme === 'light' ? '#0f172a' : '#f8fafc')
   const mutedTextColor =
     (theme.other?.mutedText as string) ??
-    (theme.colorScheme === 'light' ? 'rgba(15, 23, 42, 0.65)' : 'rgba(226, 232, 240, 0.72)')
+    (preset.colorScheme === 'light' ? 'rgba(15, 23, 42, 0.65)' : 'rgba(226, 232, 240, 0.72)')
   const accentGradient = (theme.other?.accentGradient as string) ?? 'linear-gradient(135deg, #8f5afc 0%, #5197ff 100%)'
 
   const flush = useWorkoutStore((s) => s.flush)
@@ -139,8 +140,7 @@ export default function CatalogCreatePage() {
   useEffect(() => {
     let mounted = true
     setLoadingFacets(true)
-    api
-      .getCatalogFacets()
+    getCatalogFacets()
       .then((result) => {
         if (!mounted) return
         setFacets({
@@ -175,8 +175,7 @@ export default function CatalogCreatePage() {
     }
     let cancelled = false
     setLoadingEntry(true)
-    api
-      .getCatalogEntry(catalogId)
+    getCatalogEntry(catalogId)
       .then((record) => {
         if (cancelled) return
         const primaryMuscles = Array.isArray(record.primaryMuscles) ? record.primaryMuscles : []
@@ -325,7 +324,7 @@ const updateField = <K extends keyof FormState>(field: K, value: FormState[K]) =
     try {
       if (isEditMode && catalogId) {
         const removeImage = !form.hasImage && !form.imageFile
-        const updated = await api.updateCatalogEntry(catalogId, payload, form.imageFile, removeImage)
+        const updated = await updateCatalogEntry(catalogId, payload, form.imageFile, removeImage)
 
         setFieldErrors({})
         notifications.show({
@@ -336,7 +335,7 @@ const updateField = <K extends keyof FormState>(field: K, value: FormState[K]) =
         })
         navigate('/catalog')
       } else {
-        const result = await api.createCatalogEntry(payload, form.imageFile)
+        const result = await createCatalogEntry(payload, form.imageFile)
         const upserted = typeof result?.upserted === 'number' ? result.upserted : 0
         notifications.show({
           title: upserted > 0 ? 'Catalog exercise created' : 'Catalog exercise not saved',
@@ -369,7 +368,7 @@ const updateField = <K extends keyof FormState>(field: K, value: FormState[K]) =
     if (!catalogId || !isEditMode) return
     setDeleting(true)
     try {
-      await api.deleteCatalogEntry(catalogId)
+      await deleteCatalogEntry(catalogId)
       notifications.show({
         title: 'Catalog exercise deleted',
         message: `${form.name} was removed from the catalog.`,
@@ -418,7 +417,7 @@ const updateField = <K extends keyof FormState>(field: K, value: FormState[K]) =
         lastSavedAt={lastSavedAt}
         onLogout={async () => {
           try {
-            await api.logout()
+            await logout()
           } catch {}
           navigate('/')
         }}
@@ -748,13 +747,12 @@ const updateField = <K extends keyof FormState>(field: K, value: FormState[K]) =
                   disabled={disableControls}
                   style={{ marginLeft: 'auto' }}
                   styles={{
-                    root: {
-                      backgroundImage: accentGradient,
-                      border: 'none',
-                      color: theme.colorScheme === 'light' ? '#0f172a' : '#f8fafc'
-                    }
-                  }}
-                >
+                                    root: {
+                                      backgroundImage: accentGradient,
+                                      border: 'none',
+                                      color: preset.colorScheme === 'light' ? '#0f172a' : '#f8fafc'
+                                    }
+                                  }}                >
                   {submitLabel}
                 </Button>
               </Group>
@@ -1069,7 +1067,7 @@ const updateField = <K extends keyof FormState>(field: K, value: FormState[K]) =
                   root: {
                     backgroundImage: accentGradient,
                     border: 'none',
-                    color: theme.colorScheme === 'light' ? '#0f172a' : '#f8fafc'
+                    color: preset.colorScheme === 'light' ? '#0f172a' : '#f8fafc'
                   }
                 }}
               >

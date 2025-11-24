@@ -1,16 +1,16 @@
 import React, { useMemo, useState, useCallback, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
-import { api } from '@/api/client'
 import { Exercise } from '@/db/schema'
 import { useWorkoutStore } from '@/store/useWorkoutStore'
 import SetList from './SetList'
 import { useAutoSave } from '@/hooks/useAutoSave'
 import { ActionIcon, Badge, Button, Card, Divider, Group, Stack, Text, Title, Textarea, Tooltip, useMantineTheme } from '@mantine/core'
 import { IconPlus, IconTrash, IconNote, IconMoonStars } from '@tabler/icons-react'
-import { DEFAULT_SURFACES, ThemeSurfaces } from '@/theme'
+import { DEFAULT_SURFACES, ThemeSurfaces, useThemePreset } from '@/theme'
 import { AUTO_SAVE_DELAY_MS } from '@/config'
 import { useMediaQuery } from '@mantine/hooks'
+import UnsavedIndicator from './UnsavedIndicator'
 
 const DEFAULT_REST_DURATION_SECONDS = 90
 
@@ -22,9 +22,10 @@ export default function ExerciseItem({ exercise }: { exercise: Exercise }) {
   const [showNote, setShowNote] = useState<boolean>(() => (exercise.comment || '').trim().length > 0)
   const [imageError, setImageError] = useState(false)
   const theme = useMantineTheme()
+  const { preset } = useThemePreset()
   const surfaces = (theme.other?.surfaces as ThemeSurfaces) ?? DEFAULT_SURFACES
   const accentGradient = (theme.other?.accentGradient as string) ?? 'linear-gradient(135deg, #8f5afc 0%, #5197ff 100%)'
-  const primaryText = theme.colorScheme === 'light' ? '#0f172a' : '#f8fafc'
+  const primaryText = preset.colorScheme === 'light' ? '#0f172a' : '#f8fafc'
   const isMobile = useMediaQuery('(max-width: 640px)')
 
   // Check if exercise or any of its sets are unsynced
@@ -66,18 +67,7 @@ export default function ExerciseItem({ exercise }: { exercise: Exercise }) {
 
   return (
     <>
-      {isUnsaved && (
-        <style>{`
-          @keyframes redGlow {
-            0%, 100% {
-              box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.3), 0 0 20px rgba(239, 68, 68, 0.2), 0 0 40px rgba(239, 68, 68, 0.1);
-            }
-            50% {
-              box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.5), 0 0 30px rgba(239, 68, 68, 0.4), 0 0 60px rgba(239, 68, 68, 0.2);
-            }
-          }
-        `}</style>
-      )}
+      {isUnsaved && <UnsavedIndicator />}
       <Card
         withBorder
         radius="lg"

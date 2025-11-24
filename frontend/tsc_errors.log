@@ -1,0 +1,152 @@
+src/components/AuthGate.tsx(3,25): error TS5097: An import path can only end with a '.tsx' extension when 'allowImportingTsExtensions' is enabled.
+src/components/CatalogBrowser.tsx(48,50): error TS2339: Property 'colorScheme' does not exist on type 'MantineTheme'.
+src/components/CatalogBrowser.tsx(143,35): error TS2339: Property 'colorScheme' does not exist on type 'MantineTheme'.
+src/components/CatalogBrowser.tsx(159,104): error TS2339: Property 'colorScheme' does not exist on type 'MantineTheme'.
+src/components/CatalogItem.tsx(3,10): error TS2305: Module '"@/api"' has no exported member 'api'.
+src/components/CatalogItem.tsx(29,50): error TS2339: Property 'colorScheme' does not exist on type 'MantineTheme'.
+src/components/CatalogItem.tsx(171,43): error TS2339: Property 'colorScheme' does not exist on type 'MantineTheme'.
+src/components/DayPicker.tsx(117,11): error TS2322: Type '(value: Date | null) => Promise<void>' is not assignable to type '(value: string | null) => void'.
+  Types of parameters 'value' and 'value' are incompatible.
+    Type 'string | null' is not assignable to type 'Date | null'.
+      Type 'string' is not assignable to type 'Date'.
+src/components/DayPicker.tsx(150,13): error TS2353: Object literal may only specify known properties, and 'dropdown' does not exist in type 'Partial<Record<DateInputStylesNames, CSSProperties>> | ((theme: MantineTheme, props: DateInputProps, ctx: unknown) => Partial<...>)'.
+src/components/ExerciseItem.tsx(4,10): error TS2305: Module '"@/api"' has no exported member 'api'.
+src/components/ExerciseItem.tsx(28,29): error TS2339: Property 'colorScheme' does not exist on type 'MantineTheme'.
+src/components/ExerciseItem.tsx(38,22): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/components/ExerciseItem.tsx(51,20): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/components/ExerciseItem.tsx(56,12): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/components/ExerciseList.tsx(27,25): error TS2339: Property 'colorScheme' does not exist on type 'MantineTheme'.
+src/components/HeaderBar.tsx(5,15): error TS2459: Module '"@/store/useWorkoutStore"' declares 'SaveMode' locally, but it is not exported.
+src/components/HeaderBarDesktop.tsx(21,15): error TS2459: Module '"@/store/useWorkoutStore"' declares 'SaveMode' locally, but it is not exported.
+src/components/HeaderBarDesktop.tsx(25,25): error TS5097: An import path can only end with a '.tsx' extension when 'allowImportingTsExtensions' is enabled.
+src/components/HeaderBarDesktop.tsx(52,70): error TS2339: Property 'colorScheme' does not exist on type 'MantineTheme'.
+src/components/HeaderBarDesktop.tsx(54,50): error TS2339: Property 'colorScheme' does not exist on type 'MantineTheme'.
+src/components/HeaderBarDesktop.tsx(56,11): error TS2339: Property 'colorScheme' does not exist on type 'MantineTheme'.
+src/components/HeaderBarDesktop.tsx(59,55): error TS2339: Property 'colorScheme' does not exist on type 'MantineTheme'.
+src/components/HeaderBarDesktop.tsx(60,34): error TS2339: Property 'colorScheme' does not exist on type 'MantineTheme'.
+src/components/HeaderBarDesktop.tsx(61,32): error TS2339: Property 'colorScheme' does not exist on type 'MantineTheme'.
+src/components/HeaderBarDesktop.tsx(135,42): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/components/HeaderBarDesktop.tsx(142,48): error TS2339: Property 'colorScheme' does not exist on type 'MantineTheme'.
+src/components/HeaderBarDesktop.tsx(186,17): error TS2322: Type '(value: Date | null) => Promise<void>' is not assignable to type '(value: string | null) => void'.
+  Types of parameters 'value' and 'value' are incompatible.
+    Type 'string | null' is not assignable to type 'Date | null'.
+      Type 'string' is not assignable to type 'Date'.
+src/components/HeaderBarDesktop.tsx(307,34): error TS2339: Property 'colorScheme' does not exist on type 'MantineTheme'.
+src/components/HeaderBarDesktop.tsx(309,25): error TS2339: Property 'colorScheme' does not exist on type 'MantineTheme'.
+src/components/HeaderBarMobile.tsx(18,15): error TS2459: Module '"@/store/useWorkoutStore"' declares 'SaveMode' locally, but it is not exported.
+src/components/HeaderBarMobile.tsx(22,25): error TS5097: An import path can only end with a '.tsx' extension when 'allowImportingTsExtensions' is enabled.
+src/components/HeaderBarMobile.tsx(49,70): error TS2339: Property 'colorScheme' does not exist on type 'MantineTheme'.
+src/components/HeaderBarMobile.tsx(51,50): error TS2339: Property 'colorScheme' does not exist on type 'MantineTheme'.
+src/components/HeaderBarMobile.tsx(53,11): error TS2339: Property 'colorScheme' does not exist on type 'MantineTheme'.
+src/components/HeaderBarMobile.tsx(55,32): error TS2339: Property 'colorScheme' does not exist on type 'MantineTheme'.
+src/components/HeaderBarMobile.tsx(99,42): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/components/HeaderBarMobile.tsx(107,50): error TS2339: Property 'colorScheme' does not exist on type 'MantineTheme'.
+src/components/HeaderBarMobile.tsx(121,19): error TS2322: Type '(value: Date | null) => Promise<void>' is not assignable to type '(value: string | null) => void'.
+  Types of parameters 'value' and 'value' are incompatible.
+    Type 'string | null' is not assignable to type 'Date | null'.
+      Type 'string' is not assignable to type 'Date'.
+src/components/RevealAction.tsx(33,34): error TS2339: Property 'colorScheme' does not exist on type 'MantineTheme'.
+src/components/RevealAction.tsx(63,67): error TS2339: Property 'colorScheme' does not exist on type 'MantineTheme'.
+src/components/SetList.tsx(2,10): error TS2305: Module '"@/api"' has no exported member 'api'.
+src/components/SetList.tsx(21,16): error TS7006: Parameter 'record' implicitly has an 'any' type.
+src/components/SetRow.tsx(60,15): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/components/SetRow.tsx(68,15): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/components/ThemeProvider.tsx(57,9): error TS2322: Type 'MantineColorScheme' is not assignable to type '"dark" | "light" | undefined'.
+  Type '"auto"' is not assignable to type '"dark" | "light" | undefined'.
+src/db/service.ts(7,35): error TS2307: Cannot find module 'rxdb/plugins/dexie' or its corresponding type declarations.
+src/db/service.ts(86,21): error TS2339: Property 'isUnsynced' does not exist on type 'WorkoutDay | Exercise | Set | DeletedDocument'.
+  Property 'isUnsynced' does not exist on type 'DeletedDocument'.
+src/db/service.ts(87,19): error TS2339: Property 'isUnsynced' does not exist on type 'WorkoutDay | Exercise | Set | DeletedDocument'.
+  Property 'isUnsynced' does not exist on type 'DeletedDocument'.
+src/db/service.ts(90,22): error TS2339: Property 'createdAt' does not exist on type 'WorkoutDay | Exercise | Set | DeletedDocument'.
+  Property 'createdAt' does not exist on type 'DeletedDocument'.
+src/db/service.ts(91,19): error TS2339: Property 'createdAt' does not exist on type 'WorkoutDay | Exercise | Set | DeletedDocument'.
+  Property 'createdAt' does not exist on type 'DeletedDocument'.
+src/db/service.ts(93,17): error TS2339: Property 'updatedAt' does not exist on type 'WorkoutDay | Exercise | Set | DeletedDocument'.
+  Property 'updatedAt' does not exist on type 'DeletedDocument'.
+src/db/service.ts(106,19): error TS2339: Property 'updatedAt' does not exist on type 'WorkoutDay | Exercise | Set | DeletedDocument'.
+  Property 'updatedAt' does not exist on type 'DeletedDocument'.
+src/hooks/useAuth.tsx(31,12): error TS7006: Parameter 'email' implicitly has an 'any' type.
+src/hooks/useAuth.tsx(31,19): error TS7006: Parameter 'password' implicitly has an 'any' type.
+src/pages/CatalogCreatePage.tsx(109,70): error TS2339: Property 'colorScheme' does not exist on type 'MantineTheme'.
+src/pages/CatalogCreatePage.tsx(112,12): error TS2339: Property 'colorScheme' does not exist on type 'MantineTheme'.
+src/pages/CatalogCreatePage.tsx(115,42): error TS2339: Property 'flush' does not exist on type 'WorkoutState'.
+src/pages/CatalogCreatePage.tsx(116,43): error TS2339: Property 'saving' does not exist on type 'WorkoutState'.
+src/pages/CatalogCreatePage.tsx(117,49): error TS2551: Property 'lastSaveMode' does not exist on type 'WorkoutState'. Did you mean 'saveMode'?
+src/pages/CatalogCreatePage.tsx(118,48): error TS2339: Property 'lastSavedAt' does not exist on type 'WorkoutState'.
+src/pages/CatalogCreatePage.tsx(417,9): error TS2322: Type '{ onBrowseCatalog: () => void; onSave: () => any; saving: any; saveMode: any; lastSavedAt: any; onLogout: () => Promise<void>; userLabel: string; }' is not assignable to type 'IntrinsicAttributes & HeaderBarProps'.
+  Property 'onLogout' does not exist on type 'IntrinsicAttributes & HeaderBarProps'.
+src/pages/CatalogCreatePage.tsx(752,36): error TS2339: Property 'colorScheme' does not exist on type 'MantineTheme'.
+src/pages/CatalogCreatePage.tsx(1070,34): error TS2339: Property 'colorScheme' does not exist on type 'MantineTheme'.
+src/pages/CatalogPageDesktop.tsx(9,25): error TS5097: An import path can only end with a '.tsx' extension when 'allowImportingTsExtensions' is enabled.
+src/pages/CatalogPageDesktop.tsx(19,70): error TS2339: Property 'colorScheme' does not exist on type 'MantineTheme'.
+src/pages/CatalogPageDesktop.tsx(21,11): error TS2339: Property 'colorScheme' does not exist on type 'MantineTheme'.
+src/pages/CatalogPageDesktop.tsx(23,42): error TS2339: Property 'flush' does not exist on type 'WorkoutState'.
+src/pages/CatalogPageDesktop.tsx(24,43): error TS2339: Property 'saving' does not exist on type 'WorkoutState'.
+src/pages/CatalogPageDesktop.tsx(25,49): error TS2551: Property 'lastSaveMode' does not exist on type 'WorkoutState'. Did you mean 'saveMode'?
+src/pages/CatalogPageDesktop.tsx(26,48): error TS2339: Property 'lastSavedAt' does not exist on type 'WorkoutState'.
+src/pages/CatalogPageMobile.tsx(15,70): error TS2339: Property 'colorScheme' does not exist on type 'MantineTheme'.
+src/pages/CatalogPageMobile.tsx(17,11): error TS2339: Property 'colorScheme' does not exist on type 'MantineTheme'.
+src/pages/ExerciseDetailsPage.tsx(33,42): error TS2339: Property 'flush' does not exist on type 'WorkoutState'.
+src/pages/ExerciseDetailsPage.tsx(34,43): error TS2339: Property 'saving' does not exist on type 'WorkoutState'.
+src/pages/ExerciseDetailsPage.tsx(35,49): error TS2551: Property 'lastSaveMode' does not exist on type 'WorkoutState'. Did you mean 'saveMode'?
+src/pages/ExerciseDetailsPage.tsx(36,48): error TS2339: Property 'lastSavedAt' does not exist on type 'WorkoutState'.
+src/pages/ExerciseDetailsPage.tsx(37,43): error TS2339: Property 'setDay' does not exist on type 'WorkoutState'.
+src/pages/ExerciseDetailsPage.tsx(38,50): error TS2551: Property 'setDayLoading' does not exist on type 'WorkoutState'. Did you mean 'dayLoading'?
+src/pages/ExerciseDetailsPage.tsx(40,42): error TS2339: Property 'opLog' does not exist on type 'WorkoutState'.
+src/pages/ExerciseDetailsPage.tsx(64,40): error TS7006: Parameter 'op' implicitly has an 'any' type.
+src/pages/ExerciseDetailsPage.tsx(80,21): error TS2339: Property 'sets' does not exist on type 'Exercise'.
+src/pages/ExerciseDetailsPage.tsx(80,33): error TS7006: Parameter 'set' implicitly has an 'any' type.
+src/pages/ExerciseDetailsPage.tsx(112,41): error TS2339: Property 'sets' does not exist on type 'Exercise'.
+src/pages/ExerciseDetailsPage.tsx(112,52): error TS2339: Property 'sets' does not exist on type 'Exercise'.
+src/pages/ExerciseDetailsPage.tsx(120,10): error TS2339: Property 'sets' does not exist on type 'Exercise'.
+src/pages/ExerciseDetailsPage.tsx(120,24): error TS7006: Parameter 'set' implicitly has an 'any' type.
+src/pages/ExerciseDetailsPage.tsx(166,31): error TS2304: Cannot find name 'api'.
+src/pages/ExerciseDetailsPage.tsx(188,11): error TS2304: Cannot find name 'api'.
+src/pages/ExerciseDetailsPage.tsx(189,11): error TS2304: Cannot find name 'api'.
+src/pages/ExerciseDetailsPage.tsx(279,11): error TS2322: Type '{ onBrowseCatalog: () => void; onSave: () => any; saving: any; saveMode: any; lastSavedAt: any; onLogout: () => Promise<void>; userLabel: string; }' is not assignable to type 'IntrinsicAttributes & HeaderBarProps'.
+  Property 'onLogout' does not exist on type 'IntrinsicAttributes & HeaderBarProps'.
+src/pages/ExerciseDetailsPage.tsx(281,21): error TS2304: Cannot find name 'api'.
+src/pages/ExerciseDetailsPage.tsx(489,51): error TS2304: Cannot find name 'api'.
+src/pages/ExerciseDetailsPage.tsx(491,57): error TS2304: Cannot find name 'api'.
+src/pages/ExerciseDetailsPage.tsx(767,53): error TS2304: Cannot find name 'api'.
+src/pages/ExerciseDetailsPage.tsx(769,59): error TS2304: Cannot find name 'api'.
+src/pages/LoginPage.tsx(6,25): error TS5097: An import path can only end with a '.tsx' extension when 'allowImportingTsExtensions' is enabled.
+src/pages/LoginPage.tsx(8,35): error TS2345: Argument of type '(<C = "div">(props: PolymorphicComponentProps<C, PaperProps>) => ReactElement<any, string | JSXElementConstructor<any>>) & ... 4 more ... & Record<...>' is not assignable to parameter of type 'string | ComponentType<PaperProps & { component: ElementType<any, keyof IntrinsicElements>; renderRoot?: ((props: Record<string, any>) => any) | undefined; }>'.
+  Type '(<C = "div">(props: PolymorphicComponentProps<C, PaperProps>) => ReactElement<any, string | JSXElementConstructor<any>>) & ... 4 more ... & Record<...>' is not assignable to type 'FunctionComponent<PaperProps & { component: ElementType<any, keyof IntrinsicElements>; renderRoot?: ((props: Record<string, any>) => any) | undefined; }>'.
+    Types of parameters 'props' and 'props' are incompatible.
+      Type 'PaperProps & { component: ElementType<any, keyof IntrinsicElements>; renderRoot?: ((props: Record<string, any>) => any) | undefined; }' is not assignable to type 'PaperProps & ComponentProp<"symbol"> & Omit<Omit<SVGProps<SVGSymbolElement>, "ref">, "component" | keyof PaperProps> & { ...; }'.
+        Type 'PaperProps & { component: ElementType<any, keyof IntrinsicElements>; renderRoot?: ((props: Record<string, any>) => any) | undefined; }' is not assignable to type 'ComponentProp<"symbol">'.
+          Types of property 'component' are incompatible.
+            Type 'ElementType<any, keyof IntrinsicElements>' is not assignable to type '"symbol" | undefined'.
+              Type '"object"' is not assignable to type '"symbol"'.
+src/pages/LoginPage.tsx(9,33): error TS2345: Argument of type '(<C = "div">(props: PolymorphicComponentProps<C, BoxComponentProps>) => ReactElement<any, string | JSXElementConstructor<any>>) & Omit<...> & Record<...>' is not assignable to parameter of type 'string | ComponentType<BoxComponentProps & { component: ElementType<any, keyof IntrinsicElements>; renderRoot?: ((props: Record<string, any>) => any) | undefined; }>'.
+  Type '(<C = "div">(props: PolymorphicComponentProps<C, BoxComponentProps>) => ReactElement<any, string | JSXElementConstructor<any>>) & Omit<...> & Record<...>' is not assignable to type 'FunctionComponent<BoxComponentProps & { component: ElementType<any, keyof IntrinsicElements>; renderRoot?: ((props: Record<string, any>) => any) | undefined; }>'.
+    Types of parameters 'props' and 'props' are incompatible.
+      Type 'BoxComponentProps & { component: ElementType<any, keyof IntrinsicElements>; renderRoot?: ((props: Record<string, any>) => any) | undefined; }' is not assignable to type 'BoxComponentProps & ComponentProp<"symbol"> & Omit<Omit<SVGProps<SVGSymbolElement>, "ref">, "component" | keyof BoxComponentProps> & { ...; }'.
+        Type 'BoxComponentProps & { component: ElementType<any, keyof IntrinsicElements>; renderRoot?: ((props: Record<string, any>) => any) | undefined; }' is not assignable to type 'ComponentProp<"symbol">'.
+          Types of property 'component' are incompatible.
+            Type 'ElementType<any, keyof IntrinsicElements>' is not assignable to type '"symbol" | undefined'.
+              Type '"object"' is not assignable to type '"symbol"'.
+src/pages/LoginPage.tsx(34,7): error TS2322: Type 'ComponentType<Omit<MotionComponentProps<BoxComponentProps & { component: ElementType<any, keyof IntrinsicElements>; renderRoot?: ((props: Record<string, any>) => any) | undefined; }>, "children"> & { ...; }>' is not assignable to type 'ComponentClass<Omit<MotionComponentProps<BoxComponentProps & { component: ElementType<any, keyof IntrinsicElements>; renderRoot?: ((props: Record<string, any>) => any) | undefined; }>, "children"> & { ...; }, any> | undefined'.
+  Type 'FunctionComponent<Omit<MotionComponentProps<BoxComponentProps & { component: ElementType<any, keyof IntrinsicElements>; renderRoot?: ((props: Record<string, any>) => any) | undefined; }>, "children"> & { ...; }>' is not assignable to type 'ComponentClass<Omit<MotionComponentProps<BoxComponentProps & { component: ElementType<any, keyof IntrinsicElements>; renderRoot?: ((props: Record<string, any>) => any) | undefined; }>, "children"> & { ...; }, any>'.
+    Type 'FunctionComponent<Omit<MotionComponentProps<BoxComponentProps & { component: ElementType<any, keyof IntrinsicElements>; renderRoot?: ((props: Record<string, any>) => any) | undefined; }>, "children"> & { ...; }>' provides no match for the signature 'new (props: Omit<MotionComponentProps<BoxComponentProps & { component: ElementType<any, keyof IntrinsicElements>; renderRoot?: ((props: Record<string, any>) => any) | undefined; }>, "children"> & { ...; }, deprecatedLegacyContext?: any): Component<...>'.
+src/pages/MainApp.tsx(9,25): error TS5097: An import path can only end with a '.tsx' extension when 'allowImportingTsExtensions' is enabled.
+src/pages/MainApp.tsx(14,35): error TS2345: Argument of type '(<C = "div">(props: PolymorphicComponentProps<C, PaperProps>) => ReactElement<any, string | JSXElementConstructor<any>>) & ... 4 more ... & Record<...>' is not assignable to parameter of type 'string | ComponentType<PaperProps & { component: ElementType<any, keyof IntrinsicElements>; renderRoot?: ((props: Record<string, any>) => any) | undefined; }>'.
+  Type '(<C = "div">(props: PolymorphicComponentProps<C, PaperProps>) => ReactElement<any, string | JSXElementConstructor<any>>) & ... 4 more ... & Record<...>' is not assignable to type 'FunctionComponent<PaperProps & { component: ElementType<any, keyof IntrinsicElements>; renderRoot?: ((props: Record<string, any>) => any) | undefined; }>'.
+    Types of parameters 'props' and 'props' are incompatible.
+      Type 'PaperProps & { component: ElementType<any, keyof IntrinsicElements>; renderRoot?: ((props: Record<string, any>) => any) | undefined; }' is not assignable to type 'PaperProps & ComponentProp<"symbol"> & Omit<Omit<SVGProps<SVGSymbolElement>, "ref">, "component" | keyof PaperProps> & { ...; }'.
+        Type 'PaperProps & { component: ElementType<any, keyof IntrinsicElements>; renderRoot?: ((props: Record<string, any>) => any) | undefined; }' is not assignable to type 'ComponentProp<"symbol">'.
+          Types of property 'component' are incompatible.
+            Type 'ElementType<any, keyof IntrinsicElements>' is not assignable to type '"symbol" | undefined'.
+              Type '"object"' is not assignable to type '"symbol"'.
+src/pages/MainApp.tsx(55,13): error TS2322: Type '{ onBrowseCatalog: () => void; onSave: () => Promise<void>; saving: SaveStatus; saveMode: SaveMode | null; onLogout: () => Promise<void>; userLabel: string; }' is not assignable to type 'IntrinsicAttributes & HeaderBarProps'.
+  Property 'onLogout' does not exist on type 'IntrinsicAttributes & HeaderBarProps'.
+src/store/useWorkoutStore.ts(6,10): error TS2305: Module '"@/api"' has no exported member 'api'.

@@ -3,7 +3,7 @@ import { Subscription } from 'rxjs';
 import { getDb } from '@/db/service';
 import { WorkoutDay, Exercise, WorkoutDayDoc } from '@/db/schema';
 import type { Set } from '@/db/schema';
-import { api } from '@/api/client';
+import { getDayByDate, saveBatch } from '@/api';
 import { v4 as uuidv4 } from 'uuid';
 
 // Helper to format date strings
@@ -46,6 +46,7 @@ export type WorkoutState = {
   // Actions
   init: (userId: string) => void;
   loadDay: (date: string) => Promise<void>;
+  ensureDay: (date: string) => Promise<void>;
   addExercise: (catalogId: string, name: string) => Promise<string>;
   queueCreateExercise: (params: { dayId: string; catalogId: string; nameDisplay: string; position: number }) => Promise<void>;
   updateExercise: (tempId: string, patch: Partial<Exercise>) => Promise<void>;
@@ -150,7 +151,7 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => {
       // Step 2: If not found locally, fetch from server and save locally
       if (!dayDoc) {
         try {
-          const remoteDay = await api.getDayByDate(date, true);
+          const remoteDay = await getDayByDate(date, true);
           if (remoteDay && 'id' in remoteDay && remoteDay.id) {
         const workoutDateStr = remoteDay.workoutDate.includes('T') 
           ? remoteDay.workoutDate.split('T')[0] 
@@ -274,6 +275,57 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => {
         });
 
       set({ daySub: newDaySub, isLoading: false });
+  },
+
+  ensureDay: async (date: string) => {
+      const { userId, dayLoading } = get();
+      if (!userId || dayLoading) return;
+
+      set({ dayLoading: true });
+      const db = await getDb();
+      let dayDoc = await db.workout_days.findOne({
+          selector: {
+              workoutDate: date,
+              userId: userId,
+          },
+      }).exec();
+
+      if (!dayDoc) {
+          try {
+              const remoteDay = await getDayByDate(date, true);
+              if (remoteDay && 'id' in remoteDay && remoteDay.id) {
+                  const workoutDateStr = remoteDay.workoutDate.includes('T')
+                      ? remoteDay.workoutDate.split('T')[0]
+                      : remoteDay.workoutDate;
+                  
+                  const workoutDayData: WorkoutDay = {
+                      id: remoteDay.id,
+                      tempId: uuidv4(),
+                      userId: userId,
+                      workoutDate: workoutDateStr,
+                      notes: remoteDay.notes || undefined,
+                      isRestDay: remoteDay.isRestDay,
+                      createdAt: new Date().toISOString(),
+                      updatedAt: new Date().toISOString(),
+                      isUnsynced: false
+                  };
+                  dayDoc = await db.workout_days.insert(workoutDayData);
+              }
+          } catch (error) {
+              const newDay: WorkoutDay = {
+                  id: null as any,
+                  tempId: uuidv4(),
+                  userId: userId,
+                  workoutDate: date,
+                  isRestDay: false,
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                  isUnsynced: true,
+              };
+              dayDoc = await db.workout_days.insert(newDay);
+          }
+      }
+      set({ dayLoading: false });
   },
 
   addExercise: async (catalogId: string, name: string) => {
@@ -505,7 +557,7 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => {
             }
             // Day doesn't have server ID yet, try to create it
             try {
-              const remoteDay = await api.getDayByDate(dayDoc.workoutDate, true);
+              const remoteDay = await getDayByDate(dayDoc.workoutDate, true);
               if (remoteDay && 'id' in remoteDay && remoteDay.id) {
                 await dayDoc.incrementalModify((old: WorkoutDay) => ({...old, id: remoteDay.id, isUnsynced: false}));
                 dayIdMap.set(dayDoc.tempId!, remoteDay.id);
@@ -526,7 +578,7 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => {
           if (!day.id) {
             // Day needs to be created - use ensure endpoint
             try {
-              const remoteDay = await api.getDayByDate(day.workoutDate, true);
+              const remoteDay = await getDayByDate(day.workoutDate, true);
               if (remoteDay && 'id' in remoteDay && remoteDay.id) {
                 await day.incrementalModify((old: WorkoutDay) => ({...old, id: remoteDay.id, isUnsynced: false}));
                 dayIdMap.set(day.tempId!, remoteDay.id);
@@ -644,7 +696,7 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => {
 
         // Send to server
       const clientEpoch = Number(localStorage.getItem('saveEpoch') || '0');
-      const res = await api.saveBatch(ops, crypto.randomUUID?.() || `${Date.now()}`, clientEpoch);
+      const res = await saveBatch(ops, crypto.randomUUID?.() || `${Date.now()}`, clientEpoch);
 
         // Track all documents that were synced (by tempId)
         const syncedExerciseTempIds = new Set<string>();
@@ -750,3 +802,4 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => {
   },
   };
 });
+

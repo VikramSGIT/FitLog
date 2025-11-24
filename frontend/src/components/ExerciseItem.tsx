@@ -28,9 +28,9 @@ export default function ExerciseItem({ exercise }: { exercise: Exercise }) {
   const isMobile = useMediaQuery('(max-width: 640px)')
 
   // Check if exercise or any of its sets are unsynced
-  const exerciseSets = sets.filter(s => exercise.id)
-  const hasUnsyncedSets = exerciseSets.some(s => s.isSynced === true)
-  const isUnsaved = exercise.isSynced === true || hasUnsyncedSets
+  const exerciseSets = sets.filter(s => s.exerciseId === exercise.id)
+  const hasUnsyncedSets = exerciseSets.some(s => s.isSynced === false)
+  const isUnsaved = exercise.isSynced === false || hasUnsyncedSets
 
   const saveComment = useCallback(async (value: string) => {
     if ((exercise.comment || '') !== value) {

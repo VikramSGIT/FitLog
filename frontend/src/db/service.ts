@@ -74,17 +74,17 @@ const createDatabase = async () => {
     }
   });
 
-  // Add a hook to generate a tempId for new documents
+  // Add a hook to generate a localId for new documents
   Object.values(db.collections).forEach((collection) => {
     collection.preInsert((docData) => {
-      if (!docData.tempId) {
-        docData.tempId = uuidv4();
+      if (!docData.localId) {
+        docData.localId = uuidv4();
       }
       
-      // Skip adding isUnsynced, createdAt, updatedAt for deleted_documents collection
+      // Skip adding isSynced, createdAt, updatedAt for deleted_documents collection
       if (collection.name !== 'deleted_documents') {
-        if (docData.isUnsynced === undefined) {
-          docData.isUnsynced = true;
+        if (docData.isSynced === undefined) {
+          docData.isSynced = true;
         }
         const now = new Date().toISOString();
         if (!docData.createdAt) {

@@ -7,8 +7,8 @@ import { RxJsonSchema, RxDocument } from 'rxdb';
 
 export type WorkoutDay = {
   id: string; // This will be the backend ID. Can be null if not synced.
-  tempId?: string; // UUID generated on the client. Primary for local documents.
-  isUnsynced?: boolean;
+  localId?: string; // UUID generated on the client. Primary for local documents.
+  isSynced?: boolean;
   userId: string;
   workoutDate: string; // ISO 8601 date string 'YYYY-MM-DD'
   timezone?: string;
@@ -20,9 +20,9 @@ export type WorkoutDay = {
 
 export type Exercise = {
   id: string; // Backend ID, can be null
-  tempId?: string; // Client-side UUID
-  isUnsynced?: boolean;
-  dayId: string; // Corresponds to WorkoutDay's tempId or id
+  localId?: string; // Client-side UUID
+  isSynced?: boolean;
+  dayId: string; // Corresponds to WorkoutDay's localId or id
   catalogId?: string;
   name: string;
   position: number;
@@ -33,9 +33,9 @@ export type Exercise = {
 
 export type Set = {
   id: string; // Backend ID, can be null
-  tempId?: string; // Client-side UUID
-  isUnsynced?: boolean;
-  exerciseId: string; // Corresponds to Exercise's tempId or id
+  localId?: string; // Client-side UUID
+  isSynced?: boolean;
+  exerciseId: string; // Corresponds to Exercise's localId or id
   userId: string;
   workoutDate: string; // ISO 8601 date string 'YYYY-MM-DD'
   position: number;
@@ -51,7 +51,7 @@ export type Set = {
   updatedAt: string; // ISO 8601 timestamp
 };
 
-// RxDB requires a primary key to be defined. We will use `tempId` as the primary
+// RxDB requires a primary key to be defined. We will use `localId` as the primary
 // key for local operations and `id` for synced documents.
 // When a document is synced, the backend `id` will be saved.
 
@@ -59,12 +59,12 @@ export const workoutDaySchema: RxJsonSchema<WorkoutDay> = {
   title: 'workout day schema',
   version: 0,
   description: 'describes a single day of a workout',
-  primaryKey: 'tempId',
+  primaryKey: 'localId',
   type: 'object',
   properties: {
     id: { type: ['string', 'null'] },
-    tempId: { type: 'string', maxLength: 36 },
-    isUnsynced: { type: 'boolean' },
+    localId: { type: 'string', maxLength: 36 },
+    isSynced: { type: 'boolean' },
     userId: { type: 'string', final: true, maxLength: 36 },
     workoutDate: { type: 'string', format: 'date', maxLength: 10 },
     timezone: { type: 'string' },
@@ -73,20 +73,20 @@ export const workoutDaySchema: RxJsonSchema<WorkoutDay> = {
     createdAt: { type: 'string', format: 'date-time' },
     updatedAt: { type: 'string', format: 'date-time' },
   },
-  required: ['tempId', 'userId', 'workoutDate', 'isRestDay', 'createdAt', 'updatedAt', 'isUnsynced'],
-  indexes: ['workoutDate', 'isUnsynced', ['userId', 'workoutDate']],
+  required: ['localId', 'userId', 'workoutDate', 'isRestDay', 'createdAt', 'updatedAt', 'isSynced'],
+  indexes: ['workoutDate', 'isSynced', ['userId', 'workoutDate']],
 };
 
 export const exerciseSchema: RxJsonSchema<Exercise> = {
   title: 'exercise schema',
   version: 0,
   description: 'describes an exercise within a workout day',
-  primaryKey: 'tempId',
+  primaryKey: 'localId',
   type: 'object',
   properties: {
     id: { type: ['string', 'null'] },
-    tempId: { type: 'string', maxLength: 36 },
-    isUnsynced: { type: 'boolean' },
+    localId: { type: 'string', maxLength: 36 },
+    isSynced: { type: 'boolean' },
     dayId: { type: 'string', ref: 'workout_days', maxLength: 36 },
     catalogId: { type: 'string' },
     name: { type: 'string' },
@@ -95,20 +95,20 @@ export const exerciseSchema: RxJsonSchema<Exercise> = {
     createdAt: { type: 'string', format: 'date-time' },
     updatedAt: { type: 'string', format: 'date-time' },
   },
-  required: ['tempId', 'dayId', 'name', 'position', 'createdAt', 'updatedAt', 'isUnsynced'],
-  indexes: ['dayId', 'position', 'isUnsynced'],
+  required: ['localId', 'dayId', 'name', 'position', 'createdAt', 'updatedAt', 'isSynced'],
+  indexes: ['dayId', 'position', 'isSynced'],
 };
 
 export const setSchema: RxJsonSchema<Set> = {
   title: 'set schema',
   version: 0,
   description: 'describes a set within an exercise',
-  primaryKey: 'tempId',
+  primaryKey: 'localId',
   type: 'object',
   properties: {
     id: { type: ['string', 'null'] },
-    tempId: { type: 'string', maxLength: 36 },
-    isUnsynced: { type: 'boolean' },
+    localId: { type: 'string', maxLength: 36 },
+    isSynced: { type: 'boolean' },
     exerciseId: { type: 'string', ref: 'exercises', maxLength: 36 },
     userId: { type: 'string', maxLength: 36 },
     workoutDate: { type: 'string', format: 'date', maxLength: 10 },
@@ -125,7 +125,7 @@ export const setSchema: RxJsonSchema<Set> = {
     updatedAt: { type: 'string', format: 'date-time' },
   },
   required: [
-    'tempId',
+    'localId',
     'exerciseId',
     'userId',
     'workoutDate',
@@ -135,9 +135,9 @@ export const setSchema: RxJsonSchema<Set> = {
     'isWarmup',
     'createdAt',
     'updatedAt',
-    'isUnsynced',
+    'isSynced',
   ],
-  indexes: ['exerciseId', 'position', 'isUnsynced', 'workoutDate'],
+  indexes: ['exerciseId', 'position', 'isSynced', 'workoutDate'],
 };
 
 export type WorkoutDayDoc = RxDocument<WorkoutDay>;
@@ -146,7 +146,7 @@ export type SetDoc = RxDocument<Set>;
 
 export type DeletedDocument = {
   id: string | null;
-  tempId: string;
+  localId: string;
   collectionName: string;
   deletedAt: string;
 };
@@ -155,15 +155,15 @@ export const deletedDocumentSchema: RxJsonSchema<DeletedDocument> = {
   title: 'deleted document schema',
   version: 0,
   description: 'stores information about deleted documents for syncing',
-  primaryKey: 'tempId',
+  primaryKey: 'localId',
   type: 'object',
   properties: {
     id: { type: ['string', 'null'] },
-    tempId: { type: 'string', maxLength: 36 },
+    localId: { type: 'string', maxLength: 36 },
     collectionName: { type: 'string' },
     deletedAt: { type: 'string', format: 'date-time', maxLength: 29 },
   },
-  required: ['tempId', 'collectionName', 'deletedAt'],
+  required: ['localId', 'collectionName', 'deletedAt'],
   indexes: ['deletedAt'],
 };
 

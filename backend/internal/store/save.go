@@ -58,17 +58,17 @@ func (o *opEnvelope) UnmarshalJSON(data []byte) error {
 
 // Create/update types
 type createExerciseOp struct {
-	Type     opType `json:"type"`
-	TempID   string `json:"tempId"`
-	DayID    string `json:"dayId"`
-	CatalogID string `json:"catalogId"`
-	Position int    `json:"position"`
-	Comment  *string `json:"comment,omitempty"`
+	Type      opType  `json:"type"`
+	LocalID   string  `json:"localId"`
+	DayID     string  `json:"dayId"`
+	CatalogID string  `json:"catalogId"`
+	Position  int     `json:"position"`
+	Comment   *string `json:"comment,omitempty"`
 }
 
 type createSetOp struct {
 	Type       opType  `json:"type"`
-	TempID     string  `json:"tempId"`
+	LocalID    string  `json:"localId"`
 	ExerciseID string  `json:"exerciseId"` // can be "temp:<id>"
 	Position   int     `json:"position"`
 	Reps       int     `json:"reps"`
@@ -120,7 +120,7 @@ type deleteSetOp struct {
 
 type createRestOp struct {
 	Type       opType `json:"type"`
-	TempID     string `json:"tempId"`
+	LocalID    string `json:"localId"`
 	ExerciseID string `json:"exerciseId"` // may be "temp:<id>"
 	Position   int    `json:"position"`
 	Duration   int    `json:"durationSeconds"`
@@ -148,14 +148,14 @@ type updateDayOp struct {
 
 // SaveMapping is returned to map temp -> real IDs created during the batch.
 type SaveMapping struct {
-	Exercises []TempMap `json:"exercises"`
-	Sets      []TempMap `json:"sets"`
-	Rests     []TempMap `json:"rests"`
+	Exercises []LocalIdMap `json:"exercises"`
+	Sets      []LocalIdMap `json:"sets"`
+	Rests     []LocalIdMap `json:"rests"`
 }
 
-type TempMap struct {
-	TempID string `json:"tempId"`
-	ID     string `json:"id"`
+type LocalIdMap struct {
+	LocalID string `json:"localId"`
+	ID      string `json:"id"`
 }
 
 // ProcessBatch applies the ops within a single transaction using the prescribed ordering.
@@ -252,8 +252,8 @@ func (s *Save) ProcessBatch(ctx context.Context, userID string, rawOps []json.Ra
 			if err = json.Unmarshal(e.raw, &op); err != nil {
 				return SaveMapping{}, time.Time{}, fmt.Errorf("invalid createExercise: %w", err)
 			}
-			if strings.TrimSpace(op.TempID) == "" || strings.TrimSpace(op.DayID) == "" || strings.TrimSpace(op.CatalogID) == "" {
-				return SaveMapping{}, time.Time{}, errors.New("createExercise missing tempId/dayId/catalogId")
+			if strings.TrimSpace(op.LocalID) == "" || strings.TrimSpace(op.DayID) == "" || strings.TrimSpace(op.CatalogID) == "" {
+				return SaveMapping{}, time.Time{}, errors.New("createExercise missing localId/dayId/catalogId")
 			}
 			const qCreateEx = `
 				insert into exercises (day_id, catalog_id, position, comment)
@@ -265,10 +265,10 @@ func (s *Save) ProcessBatch(ctx context.Context, userID string, rawOps []json.Ra
 			if err = tx.QueryRowxContext(ctx, qCreateEx, op.DayID, op.CatalogID, op.Position, op.Comment, userID).Scan(&realExID); err != nil {
 				return SaveMapping{}, time.Time{}, err
 			}
-			tempToRealExercise[op.TempID] = realExID
-			mapping.Exercises = append(mapping.Exercises, TempMap{TempID: op.TempID, ID: realExID})
-			log.Printf("save op createExercise key=%s user=%s tempId=%s id=%s dayId=%s catalogId=%s position=%d",
-				safeStr(idKey), userID, op.TempID, realExID, op.DayID, op.CatalogID, op.Position)
+			tempToRealExercise[op.LocalID] = realExID
+			mapping.Exercises = append(mapping.Exercises, LocalIdMap{LocalID: op.LocalID, ID: realExID})
+			log.Printf("save op createExercise key=%s user=%s localId=%s id=%s dayId=%s catalogId=%s position=%d",
+				safeStr(idKey), userID, op.LocalID, realExID, op.DayID, op.CatalogID, op.Position)
 		case opCreateSet:
 			var op createSetOp
 			if err = json.Unmarshal(e.raw, &op); err != nil {
@@ -290,10 +290,10 @@ func (s *Save) ProcessBatch(ctx context.Context, userID string, rawOps []json.Ra
 			if err = tx.QueryRowxContext(ctx, qCreateSet, exID, userID, op.Position, op.Reps, op.WeightKg, op.IsWarmup).Scan(&realSetID); err != nil {
 				return SaveMapping{}, time.Time{}, err
 			}
-			tempToRealSet[op.TempID] = realSetID
-			mapping.Sets = append(mapping.Sets, TempMap{TempID: op.TempID, ID: realSetID})
-			log.Printf("save op createSet key=%s user=%s tempId=%s id=%s exerciseId=%s position=%d reps=%d weightKg=%.2f warmup=%t",
-				safeStr(idKey), userID, op.TempID, realSetID, exID, op.Position, op.Reps, op.WeightKg, op.IsWarmup)
+			tempToRealSet[op.LocalID] = realSetID
+			mapping.Sets = append(mapping.Sets, LocalIdMap{LocalID: op.LocalID, ID: realSetID})
+			log.Printf("save op createSet key=%s user=%s localId=%s id=%s exerciseId=%s position=%d reps=%d weightKg=%.2f warmup=%t",
+				safeStr(idKey), userID, op.LocalID, realSetID, exID, op.Position, op.Reps, op.WeightKg, op.IsWarmup)
 		case opCreateRest:
 			var op createRestOp
 			if err = json.Unmarshal(e.raw, &op); err != nil {
@@ -320,10 +320,10 @@ func (s *Save) ProcessBatch(ctx context.Context, userID string, rawOps []json.Ra
 			if err = tx.QueryRowxContext(ctx, qCreateRest, exID, userID, op.Position, op.Duration).Scan(&realRestID); err != nil {
 				return SaveMapping{}, time.Time{}, err
 			}
-			tempToRealRest[op.TempID] = realRestID
-			mapping.Rests = append(mapping.Rests, TempMap{TempID: op.TempID, ID: realRestID})
-			log.Printf("save op createRest key=%s user=%s tempId=%s id=%s exerciseId=%s position=%d duration=%d",
-				safeStr(idKey), userID, op.TempID, realRestID, exID, op.Position, op.Duration)
+			tempToRealRest[op.LocalID] = realRestID
+			mapping.Rests = append(mapping.Rests, LocalIdMap{LocalID: op.LocalID, ID: realRestID})
+			log.Printf("save op createRest key=%s user=%s localId=%s id=%s exerciseId=%s position=%d duration=%d",
+				safeStr(idKey), userID, op.LocalID, realRestID, exID, op.Position, op.Duration)
 		case opUpdateExercise:
 			var op updateExerciseOp
 			if err = json.Unmarshal(e.raw, &op); err != nil {

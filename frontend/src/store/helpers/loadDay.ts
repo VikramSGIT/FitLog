@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 type DayWithExercises = {
     id: string;
-    tempId?: string;
+    localId?: string;
     exercises: Exercise[];
     isRestDay: boolean;
     workoutDate: string;
@@ -17,8 +17,8 @@ type DayWithExercises = {
 const computeDay = (activeDay: WorkoutDayDoc | null, exercises: Exercise[]): DayWithExercises | null => {
     if (!activeDay) return null;
     return {
-        id: activeDay.id || activeDay.tempId || '',
-        tempId: activeDay.tempId,
+        id: activeDay.id || activeDay.localId || '',
+        localId: activeDay.localId,
         exercises: exercises || [],
         isRestDay: activeDay.isRestDay,
         workoutDate: activeDay.workoutDate,
@@ -67,14 +67,14 @@ export const loadDay = async (date: string, get: () => WorkoutState, set: (state
 
         const workoutDayData: WorkoutDay = {
           id: remoteDay.id,
-          tempId: uuidv4(), // Generate tempId for local reference
+          localId: uuidv4(), // Generate localId for local reference
           userId: userId,
           workoutDate: workoutDateStr,
           notes: remoteDay.notes || undefined,
           isRestDay: remoteDay.isRestDay,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
-          isUnsynced: false
+          isSynced: false
         };
         dayDoc = await db.workout_days.insert(workoutDayData);
 
@@ -82,15 +82,15 @@ export const loadDay = async (date: string, get: () => WorkoutState, set: (state
         for (const ex of remoteDay.exercises) {
           const exerciseData: Exercise = {
             id: ex.id,
-            tempId: uuidv4(),
-            dayId: dayDoc.tempId!, // Always use tempId for local references
+            localId: uuidv4(),
+            dayId: dayDoc.localId!, // Always use localId for local references
             catalogId: ex.catalogId,
             name: ex.name,
             position: ex.position,
             comment: ex.comment,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
-            isUnsynced: false
+            isSynced: false
           };
           const exerciseDoc = await db.exercises.insert(exerciseData);
 
@@ -98,8 +98,8 @@ export const loadDay = async (date: string, get: () => WorkoutState, set: (state
             for (const s of ex.sets) {
               const setData: Set = {
                 id: s.id,
-                tempId: uuidv4(),
-                exerciseId: exerciseDoc.tempId!, // Always use tempId for local references
+                localId: uuidv4(),
+                exerciseId: exerciseDoc.localId!, // Always use localId for local references
                 userId: userId,
                 workoutDate: workoutDateStr,
                 position: s.position,
@@ -113,7 +113,7 @@ export const loadDay = async (date: string, get: () => WorkoutState, set: (state
                 volumeKg: s.volumeKg,
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString(),
-                isUnsynced: false,
+                isSynced: false,
               };
               await db.sets.insert(setData);
             }
@@ -148,7 +148,7 @@ export const loadDay = async (date: string, get: () => WorkoutState, set: (state
       // Step 4: Subscribe to exercises for this day
       const newExercisesSub = db.exercises
         .find({
-          selector: { dayId: dayDoc.tempId },
+          selector: { dayId: dayDoc.localId },
         })
         .$.subscribe(exercises => {
           // RxDB documents should have all properties accessible
@@ -161,7 +161,7 @@ export const loadDay = async (date: string, get: () => WorkoutState, set: (state
           prevSetsSub?.unsubscribe();
 
           // Step 5: Subscribe to sets for these exercises
-          const exerciseTempIds = sortedExercises.map(ex => ex.tempId).filter(Boolean) as string[];
+          const exerciseTempIds = sortedExercises.map(ex => ex.localId).filter(Boolean) as string[];
           if (exerciseTempIds.length > 0) {
             const newSetsSub = db.sets
               .find({

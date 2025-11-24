@@ -152,7 +152,6 @@ export default function CatalogCreatePage() {
         })
       })
       .catch((err) => {
-        console.error('Failed to load catalog facets', err)
         notifications.show({
           title: 'Could not load catalog metadata',
           message: 'You can still fill in the form manually.',
@@ -219,7 +218,7 @@ export default function CatalogCreatePage() {
       })
       .catch((err) => {
         if (cancelled) return
-        console.error('Failed to load catalog entry', err)
+        
         notifications.show({
           title: 'Could not load catalog exercise',
           message: 'Please try opening the catalog entry again.',

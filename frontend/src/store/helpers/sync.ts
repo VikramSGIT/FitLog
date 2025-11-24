@@ -4,7 +4,6 @@ import { WorkoutState } from '../useWorkoutStore';
 
 export const sync = async (get: () => WorkoutState, set: (state: Partial<WorkoutState>) => void) => {
   if (get().isSyncing) {
-    console.log('Sync already in progress.');
     return;
   }
   set({ isSyncing: true, saveStatus: 'saving' });
@@ -100,7 +99,6 @@ export const sync = async (get: () => WorkoutState, set: (state: Partial<Workout
 
     set({ saveStatus: 'saved' });
   } catch (error) {
-    console.error('Sync failed:', error);
     set({ saveStatus: 'error' });
   } finally {
     set({ isSyncing: false });

@@ -77,7 +77,6 @@ export default function DayPicker() {
           setDay(res as any)
         }
       } catch (err) {
-        console.error('Failed to load workout day', err)
       } finally {
         if (loadingRef.current === date) {
           loadingRef.current = null
@@ -113,7 +112,6 @@ export default function DayPicker() {
       const updated = await api.updateDay(day.id, { isRestDay: !day.isRestDay })
       setDay(updated)
     } catch (err) {
-      console.error('Failed to toggle rest day', err)
     } finally {
       setDayLoading(false)
       setRestUpdating(false)
@@ -129,7 +127,6 @@ export default function DayPicker() {
       const updated = await api.updateDay(day.id, { isRestDay: !day.isRestDay })
       setDay(updated)
     } catch (err) {
-      console.error('Failed to toggle rest day', err)
     } finally {
       setDayLoading(false)
       setRestUpdating(false)

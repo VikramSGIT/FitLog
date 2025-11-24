@@ -52,14 +52,14 @@ export type Set = {
 
 export const workoutDaySchema: RxJsonSchema<WorkoutDay> = {
   title: 'workout day schema',
-  version: 1, // Incremented version
+  version: 0, // Start at version 0 to avoid migration issues
   description: 'describes a single day of a workout',
   primaryKey: 'id',
   type: 'object',
   properties: {
     id: { type: 'string', maxLength: 36 },
-    serverId: { type: ['string', 'null'], index: true },
-    isSynced: { type: 'boolean', default: false, index: true },
+    serverId: { type: ['string', 'null'] },
+    isSynced: { type: 'boolean', default: false },
     userId: { type: 'string', final: true, maxLength: 36 },
     workoutDate: { type: 'string', format: 'date', maxLength: 10 },
     timezone: { type: 'string' },
@@ -69,19 +69,19 @@ export const workoutDaySchema: RxJsonSchema<WorkoutDay> = {
     updatedAt: { type: 'string', format: 'date-time' },
   },
   required: ['id', 'userId', 'workoutDate', 'isRestDay', 'createdAt', 'updatedAt', 'isSynced'],
-  indexes: ['workoutDate', 'isSynced', 'serverId', ['userId', 'workoutDate']],
+  indexes: ['workoutDate', 'isSynced', ['userId', 'workoutDate']],
 };
 
 export const exerciseSchema: RxJsonSchema<Exercise> = {
   title: 'exercise schema',
-  version: 1, // Incremented version
+  version: 0, // Start at version 0 to avoid migration issues
   description: 'describes an exercise within a workout day',
   primaryKey: 'id',
   type: 'object',
   properties: {
     id: { type: 'string', maxLength: 36 },
-    serverId: { type: ['string', 'null'], index: true },
-    isSynced: { type: 'boolean', default: false, index: true },
+    serverId: { type: ['string', 'null'] },
+    isSynced: { type: 'boolean', default: false },
     dayId: { type: 'string', ref: 'workout_days', maxLength: 36 },
     catalogId: { type: 'string' },
     name: { type: 'string' },
@@ -91,19 +91,19 @@ export const exerciseSchema: RxJsonSchema<Exercise> = {
     updatedAt: { type: 'string', format: 'date-time' },
   },
   required: ['id', 'dayId', 'name', 'position', 'createdAt', 'updatedAt', 'isSynced'],
-  indexes: ['dayId', 'position', 'isSynced', 'serverId'],
+  indexes: ['dayId', 'position', 'isSynced'],
 };
 
 export const setSchema: RxJsonSchema<Set> = {
   title: 'set schema',
-  version: 1, // Incremented version
+  version: 0, // Start at version 0 to avoid migration issues
   description: 'describes a set within an exercise',
   primaryKey: 'id',
   type: 'object',
   properties: {
     id: { type: 'string', maxLength: 36 },
-    serverId: { type: ['string', 'null'], index: true },
-    isSynced: { type: 'boolean', default: false, index: true },
+    serverId: { type: ['string', 'null'] },
+    isSynced: { type: 'boolean', default: false },
     exerciseId: { type: 'string', ref: 'exercises', maxLength: 36 },
     userId: { type: 'string', maxLength: 36 },
     workoutDate: { type: 'string', format: 'date', maxLength: 10 },
@@ -132,7 +132,7 @@ export const setSchema: RxJsonSchema<Set> = {
     'updatedAt',
     'isSynced',
   ],
-  indexes: ['exerciseId', 'position', 'isSynced', 'workoutDate', 'serverId'],
+  indexes: ['exerciseId', 'position', 'isSynced', 'workoutDate'],
 };
 
 export type WorkoutDayDoc = RxDocument<WorkoutDay>;
@@ -148,7 +148,7 @@ export type DeletedDocument = {
 
 export const deletedDocumentSchema: RxJsonSchema<DeletedDocument> = {
   title: 'deleted document schema',
-  version: 1, // Incremented version
+  version: 0, // Start at version 0 to avoid migration issues
   description: 'stores information about deleted documents for syncing',
   primaryKey: 'id',
   type: 'object',
@@ -156,10 +156,10 @@ export const deletedDocumentSchema: RxJsonSchema<DeletedDocument> = {
     id: { type: 'string', maxLength: 36 },
     serverId: { type: ['string', 'null'] },
     collectionName: { type: 'string' },
-    deletedAt: { type: 'string', format: 'date-time' },
+    deletedAt: { type: 'string', format: 'date-time', maxLength: 30 },
   },
   required: ['id', 'collectionName', 'deletedAt'],
-  indexes: ['deletedAt', 'serverId'],
+  indexes: ['deletedAt'],
 };
 
 export type DeletedDocumentDoc = RxDocument<DeletedDocument>;

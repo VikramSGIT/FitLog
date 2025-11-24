@@ -169,7 +169,6 @@ export default function ExerciseDetailsPage() {
         setHasMore(statsData.hasMore || false)
       }
     } catch (error: unknown) {
-      console.error('Failed to load more history', error)
     } finally {
       setLoadingMore(false)
     }
@@ -495,7 +494,6 @@ export default function ExerciseDetailsPage() {
                                 }
                                 navigate('/')
                               } catch (err) {
-                                console.error('Failed to load workout day', err)
                               } finally {
                                 setDayLoading(false)
                               }
@@ -773,7 +771,6 @@ export default function ExerciseDetailsPage() {
                                   }
                                   navigate('/')
                                 } catch (err) {
-                                  console.error('Failed to load workout day', err)
                                 } finally {
                                   setDayLoading(false)
                                 }

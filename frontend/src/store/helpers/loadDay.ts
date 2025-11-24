@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 type DayWithExercises = {
     id: string;
-    localId?: string;
+    id?: string;
     exercises: Exercise[];
     isRestDay: boolean;
     workoutDate: string;
@@ -17,8 +17,8 @@ type DayWithExercises = {
 const computeDay = (activeDay: WorkoutDayDoc | null, exercises: Exercise[]): DayWithExercises | null => {
     if (!activeDay) return null;
     return {
-        id: activeDay.id || activeDay.localId || '',
-        localId: activeDay.localId,
+        id: activeDay.id || activeDay.id || '',
+        id: activeDay.id,
         exercises: exercises || [],
         isRestDay: activeDay.isRestDay,
         workoutDate: activeDay.workoutDate,
@@ -67,7 +67,7 @@ export const loadDay = async (date: string, get: () => WorkoutState, set: (state
 
         const workoutDayData: WorkoutDay = {
           id: remoteDay.id,
-          localId: uuidv4(), // Generate localId for local reference
+          id: uuidv4(), // Generate id for local reference
           userId: userId,
           workoutDate: workoutDateStr,
           notes: remoteDay.notes || undefined,
@@ -82,8 +82,8 @@ export const loadDay = async (date: string, get: () => WorkoutState, set: (state
         for (const ex of remoteDay.exercises) {
           const exerciseData: Exercise = {
             id: ex.id,
-            localId: uuidv4(),
-            dayId: dayDoc.localId!, // Always use localId for local references
+            id: uuidv4(),
+            dayId: dayDoc.id!, // Always use id for local references
             catalogId: ex.catalogId,
             name: ex.name,
             position: ex.position,
@@ -98,8 +98,8 @@ export const loadDay = async (date: string, get: () => WorkoutState, set: (state
             for (const s of ex.sets) {
               const setData: Set = {
                 id: s.id,
-                localId: uuidv4(),
-                exerciseId: exerciseDoc.localId!, // Always use localId for local references
+                id: uuidv4(),
+                exerciseId: exerciseDoc.id!, // Always use id for local references
                 userId: userId,
                 workoutDate: workoutDateStr,
                 position: s.position,
@@ -148,7 +148,7 @@ export const loadDay = async (date: string, get: () => WorkoutState, set: (state
       // Step 4: Subscribe to exercises for this day
       const newExercisesSub = db.exercises
         .find({
-          selector: { dayId: dayDoc.localId },
+          selector: { dayId: dayDoc.id },
         })
         .$.subscribe(exercises => {
           // RxDB documents should have all properties accessible
@@ -161,7 +161,7 @@ export const loadDay = async (date: string, get: () => WorkoutState, set: (state
           prevSetsSub?.unsubscribe();
 
           // Step 5: Subscribe to sets for these exercises
-          const exerciseTempIds = sortedExercises.map(ex => ex.localId).filter(Boolean) as string[];
+          const exerciseTempIds = sortedExercises.map(ex => ex.id).filter(Boolean) as string[];
           if (exerciseTempIds.length > 0) {
             const newSetsSub = db.sets
               .find({

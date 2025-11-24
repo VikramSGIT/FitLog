@@ -74,11 +74,11 @@ const createDatabase = async () => {
     }
   });
 
-  // Add a hook to generate a localId for new documents
+  // Add a hook to generate a id for new documents
   Object.values(db.collections).forEach((collection) => {
     collection.preInsert((docData) => {
-      if (!docData.localId) {
-        docData.localId = uuidv4();
+      if (!docData.id) {
+        docData.id = uuidv4();
       }
       
       // Skip adding isSynced, createdAt, updatedAt for deleted_documents collection

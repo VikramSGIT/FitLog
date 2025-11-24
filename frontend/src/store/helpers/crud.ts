@@ -15,7 +15,7 @@ export const addExercise = async (catalogId: string, name: string, get: () => Wo
       if (!dayDoc) {
         const newDay: WorkoutDay = {
           id: null as any,
-            localId: uuidv4(),
+            id: uuidv4(),
             userId: userId,
             workoutDate: selectedDate,
             isRestDay: false,
@@ -29,8 +29,8 @@ export const addExercise = async (catalogId: string, name: string, get: () => Wo
 
     const newExercise: Exercise = {
         id: null as any,
-        localId: uuidv4(),
-        dayId: dayDoc.localId!,
+        id: uuidv4(),
+        dayId: dayDoc.id!,
         catalogId: catalogId,
         name: name,
         position: exercises.length,
@@ -39,7 +39,7 @@ export const addExercise = async (catalogId: string, name: string, get: () => Wo
         updatedAt: new Date().toISOString(),
     };
     await db.exercises.insert(newExercise);
-      return newExercise.localId!;
+      return newExercise.id!;
 };
 
 export const queueCreateExercise = async ({ dayId, catalogId, nameDisplay, position }: { dayId: string; catalogId: string; nameDisplay: string; position: number }, get: () => WorkoutState) => {
@@ -50,11 +50,11 @@ export const queueCreateExercise = async ({ dayId, catalogId, nameDisplay, posit
     let dayDoc = activeDay;
 
     // Find or create day
-    if (!dayDoc || (dayDoc.localId !== dayId && dayDoc.id !== dayId)) {
+    if (!dayDoc || (dayDoc.id !== dayId && dayDoc.id !== dayId)) {
       dayDoc = await db.workout_days.findOne({
       selector: {
         $or: [
-            { localId: dayId },
+            { id: dayId },
             { id: dayId }
         ]
       }
@@ -63,7 +63,7 @@ export const queueCreateExercise = async ({ dayId, catalogId, nameDisplay, posit
       if (!dayDoc) {
       const newDay: WorkoutDay = {
           id: null as any,
-        localId: uuidv4(),
+        id: uuidv4(),
         userId: userId,
           workoutDate: selectedDate,
         isRestDay: false,
@@ -77,8 +77,8 @@ export const queueCreateExercise = async ({ dayId, catalogId, nameDisplay, posit
   
   const newExercise: Exercise = {
       id: null as any,
-    localId: uuidv4(),
-      dayId: dayDoc.localId!,
+    id: uuidv4(),
+      dayId: dayDoc.id!,
     catalogId: catalogId,
     name: nameDisplay,
     position: position,
@@ -89,23 +89,23 @@ export const queueCreateExercise = async ({ dayId, catalogId, nameDisplay, posit
   await db.exercises.insert(newExercise);
 };
 
-export const updateExercise = async (localId: string, patch: Partial<Exercise>) => {
+export const updateExercise = async (id: string, patch: Partial<Exercise>) => {
   const db = await getDb();
-  const doc = await db.exercises.findOne(localId).exec();
+  const doc = await db.exercises.findOne(id).exec();
   if (doc) {
       await doc.incrementalModify((oldData: Exercise) => ({...oldData, ...patch, isSynced: true}));
   }
 };
 
-export const deleteExercise = async (localId: string) => {
+export const deleteExercise = async (id: string) => {
   const db = await getDb();
-  const doc = await db.exercises.findOne(localId).exec();
+  const doc = await db.exercises.findOne(id).exec();
   if (doc) {
       // Track deletion if synced
     if (doc.id) {
       await db.deleted_documents.insert({
           id: doc.id as any,
-          localId: uuidv4(),
+          id: uuidv4(),
         collectionName: 'exercises',
         deletedAt: new Date().toISOString(),
       });
@@ -123,7 +123,7 @@ export const addSet = async (exerciseTempId: string, get: () => WorkoutState) =>
 
   const newSet: Set = {
       id: null as any,
-      localId: uuidv4(),
+      id: uuidv4(),
       exerciseId: exerciseTempId,
       userId: userId,
       workoutDate: selectedDate,
@@ -139,30 +139,30 @@ export const addSet = async (exerciseTempId: string, get: () => WorkoutState) =>
   await db.sets.insert(newSet);
 };
 
-export const updateSet = async (localId: string, patch: Partial<Set>) => {
+export const updateSet = async (id: string, patch: Partial<Set>) => {
   const db = await getDb();
-  const doc = await db.sets.findOne(localId).exec();
+  const doc = await db.sets.findOne(id).exec();
     if (doc) {
       await doc.incrementalModify((oldData: Set) => ({...oldData, ...patch, isSynced: true}));
   }
 };
 
-export const deleteSet = async (localId: string) => {
+export const deleteSet = async (id: string) => {
   const db = await getDb();
-  const doc = await db.sets.findOne(localId).exec();
+  const doc = await db.sets.findOne(id).exec();
     if (doc) {
       // Track deletion if synced
       if (doc.id) {
         await db.deleted_documents.insert({
           id: doc.id as any,
-          localId: uuidv4(),
+          id: uuidv4(),
           collectionName: 'sets',
           deletedAt: new Date().toISOString(),
         });
       }
       
       // Mark parent exercise as unsynced when a set is deleted
-      // Try to find exercise by localId first (most common case)
+      // Try to find exercise by id first (most common case)
       let exerciseDoc = await db.exercises.findOne(doc.exerciseId).exec();
       // If not found, try to find by id (in case exerciseId is a server ID)
       if (!exerciseDoc) {
@@ -177,9 +177,9 @@ export const deleteSet = async (localId: string) => {
   }
 };
 
-export const updateDay = async (localId: string, patch: Partial<WorkoutDay>) => {
+export const updateDay = async (id: string, patch: Partial<WorkoutDay>) => {
   const db = await getDb();
-  const doc = await db.workout_days.findOne(localId).exec();
+  const doc = await db.workout_days.findOne(id).exec();
     if (doc) {
       await doc.incrementalModify((oldData: WorkoutDay) => ({...oldData, ...patch, isSynced: true}));
   }

@@ -17,7 +17,7 @@ type SaveMode = 'auto' | 'manual';
 
 type DayWithExercises = {
   id: string;
-  localId?: string;
+  id?: string;
   exercises: Exercise[];
   isRestDay: boolean;
   workoutDate: string;
@@ -52,17 +52,17 @@ export type WorkoutState = {
   loadDay: (date: string) => Promise<void>;
   addExercise: (catalogId: string, name: string) => Promise<string>;
   queueCreateExercise: (params: { dayId: string; catalogId: string; nameDisplay: string; position: number }) => Promise<void>;
-  updateExercise: (localId: string, patch: Partial<Exercise>) => Promise<void>;
-  deleteExercise: (localId: string) => Promise<void>;
+  updateExercise: (id: string, patch: Partial<Exercise>) => Promise<void>;
+  deleteExercise: (id: string) => Promise<void>;
   addSet: (exerciseTempId: string) => Promise<void>;
-  updateSet: (localId: string, patch: Partial<Set>) => Promise<void>;
-  deleteSet: (localId: string) => Promise<void>;
-  updateDay: (localId: string, patch: Partial<WorkoutDay>) => Promise<void>;
+  updateSet: (id: string, patch: Partial<Set>) => Promise<void>;
+  deleteSet: (id: string) => Promise<void>;
+  updateDay: (id: string, patch: Partial<WorkoutDay>) => Promise<void>;
   sync: () => Promise<void>;
   cleanup: () => void;
   setSaving: (status: SaveStatus, mode: SaveMode) => void;
   registerAutoSave: (flush: () => Promise<boolean>) => () => void;
-  setSetDirty: (localId: string, isDirty: boolean) => void;
+  setSetDirty: (id: string, isDirty: boolean) => void;
 };
 
 export const useWorkoutStore = create<WorkoutState>((set, get) => {
@@ -116,28 +116,28 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => {
     
     queueCreateExercise: (params: { dayId: string; catalogId: string; nameDisplay: string; position: number }) => crud.queueCreateExercise(params, get),
 
-    updateExercise: async (localId, patch) => {
-        await crud.updateExercise(localId, patch);
+    updateExercise: async (id, patch) => {
+        await crud.updateExercise(id, patch);
     },
 
-    deleteExercise: async (localId) => {
-        await crud.deleteExercise(localId);
+    deleteExercise: async (id) => {
+        await crud.deleteExercise(id);
     },
     
     addSet: async (exerciseTempId: string) => {
         await crud.addSet(exerciseTempId, get);
     },
 
-    updateSet: async (localId: string, patch: Partial<Set>) => {
-        await crud.updateSet(localId, patch);
+    updateSet: async (id: string, patch: Partial<Set>) => {
+        await crud.updateSet(id, patch);
     },
 
-    deleteSet: async (localId: string) => {
-        await crud.deleteSet(localId);
+    deleteSet: async (id: string) => {
+        await crud.deleteSet(id);
     },
 
-    updateDay: async (localId: string, patch: Partial<WorkoutDay>) => {
-        await crud.updateDay(localId, patch);
+    updateDay: async (id: string, patch: Partial<WorkoutDay>) => {
+        await crud.updateDay(id, patch);
     },
 
     sync: () => sync(get, set),
@@ -164,13 +164,13 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => {
       };
     },
 
-    setSetDirty: (localId: string, isDirty: boolean) => {
+    setSetDirty: (id: string, isDirty: boolean) => {
       set(state => {
         const newDirtySetIds = new Set(state.dirtySetIds);
         if (isDirty) {
-          newDirtySetIds.add(localId);
+          newDirtySetIds.add(id);
         } else {
-          newDirtySetIds.delete(localId);
+          newDirtySetIds.delete(id);
         }
         return { dirtySetIds: newDirtySetIds };
       });

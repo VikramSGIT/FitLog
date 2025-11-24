@@ -79,7 +79,7 @@ type createSetOp struct {
 
 type updateExerciseOp struct {
 	Type  opType `json:"type"`
-	ID    string `json:"id"`
+	ExerciseID string `json:"exerciseId"`
 	Patch struct {
 		Position *int    `json:"position"`
 		Comment  *string `json:"comment"`
@@ -88,7 +88,7 @@ type updateExerciseOp struct {
 
 type updateSetOp struct {
 	Type  opType `json:"type"`
-	ID    string `json:"id"`
+	SetID string `json:"setId"`
 	Patch struct {
 		Position  *int     `json:"position"`
 		Reps      *int     `json:"reps"`
@@ -111,12 +111,12 @@ type reorderSetsOp struct {
 
 type deleteExerciseOp struct {
 	Type opType `json:"type"`
-	ID   string `json:"id"`
+	ExerciseID string `json:"exerciseId"`
 }
 
 type deleteSetOp struct {
 	Type opType `json:"type"`
-	ID   string `json:"id"`
+	SetID string `json:"setId"`
 }
 
 type createRestOp struct {
@@ -129,7 +129,7 @@ type createRestOp struct {
 
 type updateRestOp struct {
 	Type  opType `json:"type"`
-	ID    string `json:"id"`
+	RestID string `json:"restId"`
 	Patch struct {
 		Position *int `json:"position"`
 		Duration *int `json:"durationSeconds"`
@@ -138,7 +138,7 @@ type updateRestOp struct {
 
 type deleteRestOp struct {
 	Type opType `json:"type"`
-	ID   string `json:"id"`
+	RestID string `json:"restId"`
 }
 
 type updateDayOp struct {
@@ -245,28 +245,28 @@ func (s *Save) ProcessBatch(ctx context.Context, userID string, rawOps []json.Ra
 			if err = json.Unmarshal(e.raw, &op); err != nil {
 				return SaveMapping{}, time.Time{}, fmt.Errorf("invalid deleteSet: %w", err)
 			}
-			id := resolveMaybeTemp(op.ID, tempToRealSet)
-			if id == "" && strings.HasPrefix(op.ID, "temp:") {
-				return SaveMapping{}, time.Time{}, fmt.Errorf("invalid deleteSet id: %s", op.ID)
+			id := resolveId(op.SetID, tempToRealSet)
+			if id == "" && strings.HasPrefix(op.SetID, "temp:") { // Changed op.ID to op.SetID
+				return SaveMapping{}, time.Time{}, fmt.Errorf("invalid deleteSet id: %s", op.SetID) // Changed op.ID to op.SetID
 			}
 			if id == "" {
-				id = op.ID
+				id = op.SetID // Changed op.ID to op.SetID
 			}
 			if _, err = tx.ExecContext(ctx, `delete from sets where id = $1 and user_id = $2`, id, userID); err != nil {
 				return SaveMapping{}, time.Time{}, err
 			}
-			log.Printf("save op deleteSet key=%s user=%s id=%s", safeStr(idKey), userID, op.ID)
+			log.Printf("save op deleteSet key=%s user=%s id=%s", safeStr(idKey), userID, op.SetID) // Changed op.ID to op.SetID
 		case opDeleteRest:
 			var op deleteRestOp
 			if err = json.Unmarshal(e.raw, &op); err != nil {
 				return SaveMapping{}, time.Time{}, fmt.Errorf("invalid deleteRest: %w", err)
 			}
-			rid := resolveMaybeTemp(op.ID, tempToRealRest)
-			if rid == "" && strings.HasPrefix(op.ID, "temp:") {
-				return SaveMapping{}, time.Time{}, fmt.Errorf("invalid deleteRest id: %s", op.ID)
+			rid := resolveId(op.RestID, tempToRealRest)
+			if rid == "" && strings.HasPrefix(op.RestID, "temp:") {
+				return SaveMapping{}, time.Time{}, fmt.Errorf("invalid deleteRest id: %s", op.RestID)
 			}
 			if rid == "" {
-				rid = op.ID
+				rid = op.RestID
 			}
 			if _, err = tx.ExecContext(ctx, `
 				delete from rest_periods rp
@@ -278,7 +278,7 @@ func (s *Save) ProcessBatch(ctx context.Context, userID string, rawOps []json.Ra
 			`, rid, userID); err != nil {
 				return SaveMapping{}, time.Time{}, err
 			}
-			log.Printf("save op deleteRest key=%s user=%s id=%s", safeStr(idKey), userID, op.ID)
+			log.Printf("save op deleteRest key=%s user=%s id=%s", safeStr(idKey), userID, op.RestID)
 		case opCreateExercise:
 			var op createExerciseOp
 			if err = json.Unmarshal(e.raw, &op); err != nil {
@@ -288,9 +288,9 @@ func (s *Save) ProcessBatch(ctx context.Context, userID string, rawOps []json.Ra
 				return SaveMapping{}, time.Time{}, errors.New("createExercise missing localId/dayId/catalogId")
 			}
 
-			dayID := resolveMaybeTemp(op.DayID, tempToRealDay)
+			dayID := resolveId(op.DayID, tempToRealDay)
 			if dayID == "" {
-				return SaveMapping{}, time.Time{}, fmt.Errorf("invalid reference for createExercise.dayId: %s", op.DayID)
+				return SaveMapping{}, time.Time{}, fmt.Errorf("invalid or out-of-order reference for createExercise.dayId: %s", op.DayID)
 			}
 
 			const qCreateEx = `
@@ -312,9 +312,9 @@ func (s *Save) ProcessBatch(ctx context.Context, userID string, rawOps []json.Ra
 			if err = json.Unmarshal(e.raw, &op); err != nil {
 				return SaveMapping{}, time.Time{}, fmt.Errorf("invalid createSet: %w", err)
 			}
-			exID := resolveMaybeTemp(op.ExerciseID, tempToRealExercise)
+			exID := resolveId(op.ExerciseID, tempToRealExercise)
 			if exID == "" {
-				return SaveMapping{}, time.Time{}, fmt.Errorf("invalid reference for createSet.exerciseId: %s", op.ExerciseID)
+				return SaveMapping{}, time.Time{}, fmt.Errorf("invalid or out-of-order reference for createSet.exerciseId: %s", op.ExerciseID)
 			}
 			const qCreateSet = `
 				insert into sets (exercise_id, user_id, workout_date, position, reps, weight_kg, is_warmup)
@@ -337,9 +337,9 @@ func (s *Save) ProcessBatch(ctx context.Context, userID string, rawOps []json.Ra
 			if err = json.Unmarshal(e.raw, &op); err != nil {
 				return SaveMapping{}, time.Time{}, fmt.Errorf("invalid createRest: %w", err)
 			}
-			exID := resolveMaybeTemp(op.ExerciseID, tempToRealExercise)
+			exID := resolveId(op.ExerciseID, tempToRealExercise)
 			if exID == "" {
-				return SaveMapping{}, time.Time{}, fmt.Errorf("invalid reference for createRest.exerciseId: %s", op.ExerciseID)
+				return SaveMapping{}, time.Time{}, fmt.Errorf("invalid or out-of-order reference for createRest.exerciseId: %s", op.ExerciseID)
 			}
 			const qCreateRest = `
 				with allowed as (
@@ -367,9 +367,9 @@ func (s *Save) ProcessBatch(ctx context.Context, userID string, rawOps []json.Ra
 			if err = json.Unmarshal(e.raw, &op); err != nil {
 				return SaveMapping{}, time.Time{}, fmt.Errorf("invalid updateExercise: %w", err)
 			}
-			id := resolveMaybeTemp(op.ID, tempToRealExercise)
+			id := resolveId(op.ExerciseID, tempToRealExercise)
 			if id == "" {
-				return SaveMapping{}, time.Time{}, fmt.Errorf("invalid updateExercise id: %s", op.ID)
+				return SaveMapping{}, time.Time{}, fmt.Errorf("invalid updateExercise id: %s", op.ExerciseID)
 			}
 			const qUpdEx = `
 				update exercises e
@@ -382,15 +382,15 @@ func (s *Save) ProcessBatch(ctx context.Context, userID string, rawOps []json.Ra
 				return SaveMapping{}, time.Time{}, err
 			}
 			log.Printf("save op updateExercise key=%s user=%s id=%s pos_set=%t comment_set=%t",
-				safeStr(idKey), userID, id, op.Patch.Position != nil, op.Patch.Comment != nil)
+				safeStr(idKey), userID, op.ExerciseID, op.Patch.Position != nil, op.Patch.Comment != nil)
 		case opUpdateSet:
 			var op updateSetOp
 			if err = json.Unmarshal(e.raw, &op); err != nil {
 				return SaveMapping{}, time.Time{}, fmt.Errorf("invalid updateSet: %w", err)
 			}
-			id := resolveMaybeTemp(op.ID, tempToRealSet)
+			id := resolveId(op.SetID, tempToRealSet)
 			if id == "" {
-				return SaveMapping{}, time.Time{}, fmt.Errorf("invalid updateSet id: %s", op.ID)
+				return SaveMapping{}, time.Time{}, fmt.Errorf("invalid updateSet id: %s", op.SetID)
 			}
 			const qUpdSet = `
 				update sets s set
@@ -404,16 +404,16 @@ func (s *Save) ProcessBatch(ctx context.Context, userID string, rawOps []json.Ra
 				return SaveMapping{}, time.Time{}, err
 			}
 			log.Printf("save op updateSet key=%s user=%s id=%s pos_set=%t reps_set=%t weight_set=%t warmup_set=%t",
-				safeStr(idKey), userID, id,
+				safeStr(idKey), userID, op.SetID,
 				op.Patch.Position != nil, op.Patch.Reps != nil, op.Patch.WeightKg != nil, op.Patch.IsWarmup != nil)
 		case opUpdateRest:
 			var op updateRestOp
 			if err = json.Unmarshal(e.raw, &op); err != nil {
 				return SaveMapping{}, time.Time{}, fmt.Errorf("invalid updateRest: %w", err)
 			}
-			id := resolveMaybeTemp(op.ID, tempToRealRest)
+			id := resolveId(op.RestID, tempToRealRest)
 			if id == "" {
-				return SaveMapping{}, time.Time{}, fmt.Errorf("invalid updateRest id: %s", op.ID)
+				return SaveMapping{}, time.Time{}, fmt.Errorf("invalid updateRest id: %s", op.RestID)
 			}
 			const qUpdRest = `
 				update rest_periods rp set
@@ -430,7 +430,7 @@ func (s *Save) ProcessBatch(ctx context.Context, userID string, rawOps []json.Ra
 				return SaveMapping{}, time.Time{}, err
 			}
 			log.Printf("save op updateRest key=%s user=%s id=%s pos_set=%t duration_set=%t",
-				safeStr(idKey), userID, id, op.Patch.Position != nil, op.Patch.Duration != nil)
+				safeStr(idKey), userID, op.RestID, op.Patch.Position != nil, op.Patch.Duration != nil)
 		case opReorderExercises:
 			var op reorderExercisesOp
 			if err = json.Unmarshal(e.raw, &op); err != nil {
@@ -438,7 +438,7 @@ func (s *Save) ProcessBatch(ctx context.Context, userID string, rawOps []json.Ra
 			}
 			count := 0
 			for idx, id := range op.OrderedIDs {
-				id = resolveMaybeTemp(id, tempToRealExercise)
+				id = resolveId(id, tempToRealExercise)
 				if id == "" {
 					return SaveMapping{}, time.Time{}, fmt.Errorf("invalid exercise id in reorder: %s", op.OrderedIDs[idx])
 				}
@@ -457,13 +457,13 @@ func (s *Save) ProcessBatch(ctx context.Context, userID string, rawOps []json.Ra
 			if err = json.Unmarshal(e.raw, &op); err != nil {
 				return SaveMapping{}, time.Time{}, fmt.Errorf("invalid reorderSets: %w", err)
 			}
-			exID := resolveMaybeTemp(op.ExerciseID, tempToRealExercise)
+			exID := resolveId(op.ExerciseID, tempToRealExercise)
 			if exID == "" {
 				return SaveMapping{}, time.Time{}, fmt.Errorf("invalid reorderSets.exerciseId: %s", op.ExerciseID)
 			}
 			count := 0
 			for idx, id := range op.OrderedIDs {
-				id = resolveMaybeTemp(id, tempToRealSet)
+				id = resolveId(id, tempToRealSet)
 				if id == "" {
 					return SaveMapping{}, time.Time{}, fmt.Errorf("invalid set id in reorder: %s", op.OrderedIDs[idx])
 				}
@@ -481,12 +481,12 @@ func (s *Save) ProcessBatch(ctx context.Context, userID string, rawOps []json.Ra
 			if err = json.Unmarshal(e.raw, &op); err != nil {
 				return SaveMapping{}, time.Time{}, fmt.Errorf("invalid deleteExercise: %w", err)
 			}
-			eid := resolveMaybeTemp(op.ID, tempToRealExercise)
-			if eid == "" && strings.HasPrefix(op.ID, "temp:") {
-				return SaveMapping{}, time.Time{}, fmt.Errorf("invalid deleteExercise id: %s", op.ID)
+			eid := resolveId(op.ExerciseID, tempToRealExercise)
+			if eid == "" && strings.HasPrefix(op.ExerciseID, "temp:") { // Changed op.ID to op.ExerciseID
+				return SaveMapping{}, time.Time{}, fmt.Errorf("invalid deleteExercise id: %s", op.ExerciseID) // Changed op.ID to op.ExerciseID
 			}
 			if eid == "" {
-				eid = op.ID
+				eid = op.ExerciseID // Changed op.ID to op.ExerciseID
 			}
 			if _, err = tx.ExecContext(ctx, `
 				delete from exercises e
@@ -495,314 +495,10 @@ func (s *Save) ProcessBatch(ctx context.Context, userID string, rawOps []json.Ra
 			`, eid, userID); err != nil {
 				return SaveMapping{}, time.Time{}, err
 			}
-			log.Printf("save op deleteExercise key=%s user=%s id=%s", safeStr(idKey), userID, op.ID)
+			log.Printf("save op deleteExercise key=%s user=%s id=%s", safeStr(idKey), userID, op.ExerciseID) // Changed op.ID to op.ExerciseID
 		default:
 			return SaveMapping{}, time.Time{}, fmt.Errorf("unknown op type: %s", string(e.Type))
 		}
-	}
-
-	// Old phased execution (kept for reference, disabled)
-	if false {
-	// Phase 0: update day rest flag (FIRST pass) — only turn OFF rest day before creations
-	for _, e := range envs {
-		if e.Type != opUpdateDay {
-			continue
-		}
-		var op updateDayOp
-		if err = json.Unmarshal(e.raw, &op); err != nil {
-			return SaveMapping{}, time.Time{}, fmt.Errorf("invalid updateDay: %w", err)
-		}
-		if !op.IsRestDay { // turning training mode ON
-			if strings.TrimSpace(op.DayID) == "" {
-				return SaveMapping{}, time.Time{}, errors.New("updateDay missing dayId")
-			}
-			if _, err = tx.ExecContext(ctx, `
-				update workout_days set is_rest_day = $3, updated_at = now()
-				where id = $1 and user_id = $2
-			`, op.DayID, userID, op.IsRestDay); err != nil {
-				return SaveMapping{}, time.Time{}, err
-			}
-			log.Printf("save op updateDay (pre) key=%s user=%s dayId=%s isRestDay=%t", safeStr(idKey), userID, op.DayID, op.IsRestDay)
-		}
-	}
-
-	// Phase 1: delete sets
-	for _, e := range envs {
-		if e.Type != opDeleteSet {
-			continue
-		}
-		var op deleteSetOp
-		if err = json.Unmarshal(e.raw, &op); err != nil {
-			return SaveMapping{}, time.Time{}, fmt.Errorf("invalid deleteSet: %w", err)
-		}
-		if _, err = tx.ExecContext(ctx, `delete from sets where id = $1 and user_id = $2`, op.ID, userID); err != nil {
-			return SaveMapping{}, time.Time{}, err
-		}
-		log.Printf("save op deleteSet key=%s user=%s id=%s", safeStr(idKey), userID, op.ID)
-	}
-
-// Phase 1b: delete rests
-for _, e := range envs {
-	if e.Type != opDeleteRest {
-		continue
-	}
-	var op deleteRestOp
-	if err = json.Unmarshal(e.raw, &op); err != nil {
-		return SaveMapping{}, time.Time{}, fmt.Errorf("invalid deleteRest: %w", err)
-	}
-	if _, err = tx.ExecContext(ctx, `
-		delete from rest_periods rp
-		using exercises e
-		join workout_days d on d.id = e.day_id
-		where rp.id = $1
-		  and rp.exercise_id = e.id
-		  and d.user_id = $2
-	`, op.ID, userID); err != nil {
-		return SaveMapping{}, time.Time{}, err
-	}
-	log.Printf("save op deleteRest key=%s user=%s id=%s", safeStr(idKey), userID, op.ID)
-}
-
-	// Phase 2: create exercises
-	for _, e := range envs {
-		if e.Type != opCreateExercise {
-			continue
-		}
-		var op createExerciseOp
-		if err = json.Unmarshal(e.raw, &op); err != nil {
-			return SaveMapping{}, time.Time{}, fmt.Errorf("invalid createExercise: %w", err)
-		}
-		if strings.TrimSpace(op.TempID) == "" || strings.TrimSpace(op.DayID) == "" || strings.TrimSpace(op.CatalogID) == "" {
-			return SaveMapping{}, time.Time{}, errors.New("createExercise missing tempId/dayId/catalogId")
-		}
-		const q = `
-			insert into exercises (day_id, catalog_id, position, comment)
-			select $1, $2, $3, $4
-			where exists (select 1 from workout_days where id = $1 and user_id = $5)
-			returning id
-		`
-		var realID string
-		if err = tx.QueryRowxContext(ctx, q, op.DayID, op.CatalogID, op.Position, op.Comment, userID).Scan(&realID); err != nil {
-			return SaveMapping{}, time.Time{}, err
-		}
-		tempToRealExercise[op.TempID] = realID
-		mapping.Exercises = append(mapping.Exercises, TempMap{TempID: op.TempID, ID: realID})
-		log.Printf("save op createExercise key=%s user=%s tempId=%s id=%s dayId=%s catalogId=%s position=%d",
-			safeStr(idKey), userID, op.TempID, realID, op.DayID, op.CatalogID, op.Position)
-	}
-
-	// Phase 3: create sets
-	for _, e := range envs {
-		if e.Type != opCreateSet {
-			continue
-		}
-		var op createSetOp
-		if err = json.Unmarshal(e.raw, &op); err != nil {
-			return SaveMapping{}, time.Time{}, fmt.Errorf("invalid createSet: %w", err)
-		}
-		exID := resolveMaybeTemp(op.ExerciseID, tempToRealExercise)
-		if exID == "" {
-			return SaveMapping{}, time.Time{}, fmt.Errorf("invalid reference for createSet.exerciseId: %s", op.ExerciseID)
-		}
-		const q = `
-			insert into sets (exercise_id, user_id, workout_date, position, reps, weight_kg, is_warmup)
-			select $1, d.user_id, d.workout_date, $3, $4, $5, $6
-			from exercises e
-			join workout_days d on d.id = e.day_id
-			where e.id = $1 and d.user_id = $2
-			returning id
-		`
-		var realID string
-		if err = tx.QueryRowxContext(ctx, q, exID, userID, op.Position, op.Reps, op.WeightKg, op.IsWarmup).Scan(&realID); err != nil {
-			return SaveMapping{}, time.Time{}, err
-		}
-		tempToRealSet[op.TempID] = realID
-		mapping.Sets = append(mapping.Sets, TempMap{TempID: op.TempID, ID: realID})
-		log.Printf("save op createSet key=%s user=%s tempId=%s id=%s exerciseId=%s position=%d reps=%d weightKg=%.2f warmup=%t",
-			safeStr(idKey), userID, op.TempID, realID, exID, op.Position, op.Reps, op.WeightKg, op.IsWarmup)
-	}
-
-// Phase 3b: create rests
-for _, e := range envs {
-	if e.Type != opCreateRest {
-		continue
-	}
-	var op createRestOp
-	if err = json.Unmarshal(e.raw, &op); err != nil {
-		return SaveMapping{}, time.Time{}, fmt.Errorf("invalid createRest: %w", err)
-	}
-	exID := resolveMaybeTemp(op.ExerciseID, tempToRealExercise)
-	if exID == "" {
-		return SaveMapping{}, time.Time{}, fmt.Errorf("invalid reference for createRest.exerciseId: %s", op.ExerciseID)
-	}
-	const q = `
-		insert into rest_periods (exercise_id, position, duration_seconds)
-		select $1, $3, $4
-		from exercises e
-		join workout_days d on d.id = e.day_id
-		where e.id = $1 and d.user_id = $2
-		returning id
-	`
-	var realID string
-	if err = tx.QueryRowxContext(ctx, q, exID, userID, op.Position, op.Duration).Scan(&realID); err != nil {
-		return SaveMapping{}, time.Time{}, err
-	}
-	tempToRealRest[op.TempID] = realID
-	mapping.Rests = append(mapping.Rests, TempMap{TempID: op.TempID, ID: realID})
-	log.Printf("save op createRest key=%s user=%s tempId=%s id=%s exerciseId=%s position=%d duration=%d",
-		safeStr(idKey), userID, op.TempID, realID, exID, op.Position, op.Duration)
-}
-
-	// Phase 4: updates
-	for _, e := range envs {
-		switch e.Type {
-		case opUpdateExercise:
-			var op updateExerciseOp
-			if err = json.Unmarshal(e.raw, &op); err != nil {
-				return SaveMapping{}, time.Time{}, fmt.Errorf("invalid updateExercise: %w", err)
-			}
-			id := resolveMaybeTemp(op.ID, tempToRealExercise)
-			if id == "" {
-				return SaveMapping{}, time.Time{}, fmt.Errorf("invalid updateExercise id: %s", op.ID)
-			}
-			const q = `
-				update exercises e
-				set position = coalesce($3, e.position),
-				    comment = coalesce($4, e.comment)
-				where e.id = $1
-				  and exists (select 1 from workout_days d where d.id = e.day_id and d.user_id = $2)
-			`
-			if _, err = tx.ExecContext(ctx, q, id, userID, op.Patch.Position, op.Patch.Comment); err != nil {
-				return SaveMapping{}, time.Time{}, err
-			}
-			log.Printf("save op updateExercise key=%s user=%s id=%s pos_set=%t comment_set=%t",
-				safeStr(idKey), userID, id, op.Patch.Position != nil, op.Patch.Comment != nil)
-		case opUpdateSet:
-			var op updateSetOp
-			if err = json.Unmarshal(e.raw, &op); err != nil {
-				return SaveMapping{}, time.Time{}, fmt.Errorf("invalid updateSet: %w", err)
-			}
-			id := resolveMaybeTemp(op.ID, tempToRealSet)
-			if id == "" {
-				return SaveMapping{}, time.Time{}, fmt.Errorf("invalid updateSet id: %s", op.ID)
-			}
-			const q = `
-				update sets s set
-				  position = coalesce($3, s.position),
-				  reps = coalesce($4, s.reps),
-				  weight_kg = coalesce($5, s.weight_kg),
-				  is_warmup = coalesce($6, s.is_warmup)
-				where s.id = $1 and s.user_id = $2
-			`
-			if _, err = tx.ExecContext(ctx, q, id, userID, op.Patch.Position, op.Patch.Reps, op.Patch.WeightKg, op.Patch.IsWarmup); err != nil {
-				return SaveMapping{}, time.Time{}, err
-			}
-			log.Printf("save op updateSet key=%s user=%s id=%s pos_set=%t reps_set=%t weight_set=%t warmup_set=%t",
-				safeStr(idKey), userID, id,
-				op.Patch.Position != nil, op.Patch.Reps != nil, op.Patch.WeightKg != nil, op.Patch.IsWarmup != nil)
-		case opUpdateRest:
-			var op updateRestOp
-			if err = json.Unmarshal(e.raw, &op); err != nil {
-				return SaveMapping{}, time.Time{}, fmt.Errorf("invalid updateRest: %w", err)
-			}
-			id := resolveMaybeTemp(op.ID, tempToRealRest)
-			if id == "" {
-				return SaveMapping{}, time.Time{}, fmt.Errorf("invalid updateRest id: %s", op.ID)
-			}
-			const q = `
-				update rest_periods rp set
-				  position = coalesce($3, rp.position),
-				  duration_seconds = coalesce($4, rp.duration_seconds),
-				  updated_at = now()
-				from exercises e
-				join workout_days d on d.id = e.day_id
-				where rp.id = $1
-				  and rp.exercise_id = e.id
-				  and d.user_id = $2
-			`
-			if _, err = tx.ExecContext(ctx, q, id, userID, op.Patch.Position, op.Patch.Duration); err != nil {
-				return SaveMapping{}, time.Time{}, err
-			}
-			log.Printf("save op updateRest key=%s user=%s id=%s pos_set=%t duration_set=%t",
-				safeStr(idKey), userID, id, op.Patch.Position != nil, op.Patch.Duration != nil)
-		}
-	}
-
-	// Phase 5: reorders
-	for _, e := range envs {
-		if e.Type != opReorderExercises {
-			continue
-		}
-		var op reorderExercisesOp
-		if err = json.Unmarshal(e.raw, &op); err != nil {
-			return SaveMapping{}, time.Time{}, fmt.Errorf("invalid reorderExercises: %w", err)
-		}
-		// Ensure all belong to user/day, then update sequential positions
-		count := 0
-		for idx, id := range op.OrderedIDs {
-			id = resolveMaybeTemp(id, tempToRealExercise)
-			if id == "" {
-				return SaveMapping{}, time.Time{}, fmt.Errorf("invalid exercise id in reorder: %s", op.OrderedIDs[idx])
-			}
-			if _, err = tx.ExecContext(ctx, `
-				update exercises e set position = $3
-				where e.id = $1
-				  and exists (select 1 from workout_days d where d.id = e.day_id and d.user_id = $2)
-			`, id, userID, idx); err != nil {
-				return SaveMapping{}, time.Time{}, err
-			}
-			count++
-		}
-		log.Printf("save op reorderExercises key=%s user=%s dayId=%s count=%d", safeStr(idKey), userID, op.DayID, count)
-	}
-	for _, e := range envs {
-		if e.Type != opReorderSets {
-			continue
-		}
-		var op reorderSetsOp
-		if err = json.Unmarshal(e.raw, &op); err != nil {
-			return SaveMapping{}, time.Time{}, fmt.Errorf("invalid reorderSets: %w", err)
-		}
-		exID := resolveMaybeTemp(op.ExerciseID, tempToRealExercise)
-		if exID == "" {
-			return SaveMapping{}, time.Time{}, fmt.Errorf("invalid reorderSets.exerciseId: %s", op.ExerciseID)
-		}
-		count := 0
-		for idx, id := range op.OrderedIDs {
-			id = resolveMaybeTemp(id, tempToRealSet)
-			if id == "" {
-				return SaveMapping{}, time.Time{}, fmt.Errorf("invalid set id in reorder: %s", op.OrderedIDs[idx])
-			}
-			if _, err = tx.ExecContext(ctx, `
-				update sets s set position = $3
-				where s.id = $1 and s.user_id = $2
-			`, id, userID, idx); err != nil {
-				return SaveMapping{}, time.Time{}, err
-			}
-			count++
-		}
-		log.Printf("save op reorderSets key=%s user=%s exerciseId=%s count=%d", safeStr(idKey), userID, exID, count)
-	}
-
-	// Phase 6: delete exercises (cascade their sets)
-	for _, e := range envs {
-		if e.Type != opDeleteExercise {
-			continue
-		}
-		var op deleteExerciseOp
-		if err = json.Unmarshal(e.raw, &op); err != nil {
-			return SaveMapping{}, time.Time{}, fmt.Errorf("invalid deleteExercise: %w", err)
-		}
-		if _, err = tx.ExecContext(ctx, `
-			delete from exercises e
-			where e.id = $1
-			  and exists (select 1 from workout_days d where d.id = e.day_id and d.user_id = $2)
-		`, op.ID, userID); err != nil {
-			return SaveMapping{}, time.Time{}, err
-		}
-		log.Printf("save op deleteExercise key=%s user=%s id=%s", safeStr(idKey), userID, op.ID)
-	}
-
 	}
 
 	if err = tx.Commit(); err != nil {
@@ -812,10 +508,9 @@ for _, e := range envs {
 	return mapping, time.Now().UTC(), nil
 }
 
-func resolveMaybeTemp(id string, tempMap map[string]string) string {
-	if strings.HasPrefix(id, "temp:") {
-		key := strings.TrimPrefix(id, "temp:")
-		return tempMap[key]
+func resolveId(id string, tempMap map[string]string) string {
+	if realId, ok := tempMap[id]; ok {
+		return realId
 	}
 	return id
 }

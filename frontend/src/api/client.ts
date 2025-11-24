@@ -303,17 +303,18 @@ export const api = {
   // Batch save
   saveBatch: (
     ops: Array<
-      | { type: 'createExercise'; id: string; dayId: string; catalogId: string; position: number; comment?: string }
-      | { type: 'createSet'; id: string; exerciseId: string; position: number; reps: number; weightKg: number; isWarmup?: boolean }
-      | { type: 'updateExercise'; id: string; patch: Partial<{ position: number; comment: string }> }
-      | { type: 'updateSet'; id: string; patch: Partial<{ position: number; reps: number; weightKg: number; isWarmup: boolean }> }
+      | { type: 'createDay'; localId: string; workoutDate: string; timezone?: string }
+      | { type: 'createExercise'; localId: string; dayId: string; catalogId: string; position: number; comment?: string }
+      | { type: 'createSet'; localId: string; exerciseId: string; position: number; reps: number; weightKg: number; isWarmup?: boolean }
+      | { type: 'createRest'; localId: string; exerciseId: string; position: number; durationSeconds: number }
+      | { type: 'updateExercise'; exerciseId: string; patch: Partial<{ position: number; comment: string }> }
+      | { type: 'updateSet'; setId: string; patch: Partial<{ position: number; reps: number; weightKg: number; isWarmup: boolean }> }
+      | { type: 'updateRest'; restId: string; patch: Partial<{ position: number; durationSeconds: number }> }
       | { type: 'reorderExercises'; dayId: string; orderedIds: string[] }
       | { type: 'reorderSets'; exerciseId: string; orderedIds: string[] }
-      | { type: 'deleteExercise'; id: string }
-      | { type: 'deleteSet'; id: string }
-      | { type: 'createRest'; id: string; exerciseId: string; position: number; durationSeconds: number }
-      | { type: 'updateRest'; id: string; patch: Partial<{ position: number; durationSeconds: number }> }
-      | { type: 'deleteRest'; id: string }
+      | { type: 'deleteExercise'; exerciseId: string }
+      | { type: 'deleteSet'; setId: string }
+      | { type: 'deleteRest'; restId: string }
       | { type: 'updateDay'; dayId: string; isRestDay: boolean }
     >,
     idempotencyKey?: string,
@@ -343,9 +344,9 @@ export const api = {
       return data as {
         applied: boolean
         mapping: {
-          exercises: { id: string; id: string }[]
-          sets: { id: string; id: string }[]
-          rests: { id: string; id: string }[]
+          exercises: { localId: string; id: string }[]
+          sets: { localId: string; id: string }[]
+          rests: { localId: string; id: string }[]
         }
         updatedAt: string
         serverEpoch: number

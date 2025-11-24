@@ -48,7 +48,7 @@ export type WorkoutState = {
 
   // Actions
   init: (userId: string) => void;
-  loadDay: (date: string) => Promise<void>;
+  loadDay: (date: string, userId: string) => Promise<void>;
   addExercise: (catalogId: string, name: string) => Promise<string>;
   updateExercise: (id: string, patch: Partial<Exercise>) => Promise<void>;
   deleteExercise: (id: string) => Promise<void>;
@@ -91,6 +91,7 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => {
 
     // Actions
     init: (userId: string) => {
+      console.log(`STORE: init called with userId: '${userId}'`);
       set({ userId });
 
       // Subscribe to deleted documents count
@@ -103,12 +104,16 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => {
         // Failed to subscribe to deleted documents
       });
 
-      get().loadDay(get().selectedDate).catch(() => {
+      console.log(`STORE: calling loadDay with date: '${get().selectedDate}' and userId: '${userId}'`);
+      get().loadDay(get().selectedDate, userId).catch(() => {
         // Error handled silently
       });
     },
 
-    loadDay: (date: string) => loadDay(date, get, set),
+    loadDay: (date: string, userId: string) => {
+      console.log(`STORE: loadDay action called with date: '${date}' and userId: '${userId}'`);
+      return loadDay(date, userId, get, set);
+    },
     
     addExercise: (catalogId: string, name: string) => crud.addExercise(catalogId, name, get),
 

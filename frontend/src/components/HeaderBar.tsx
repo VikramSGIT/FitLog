@@ -283,7 +283,10 @@ export default function HeaderBar({
     if (!value) return
     const formatted = format(value, 'yyyy-MM-dd')
     setSelectedDate(formatted)
-    await loadDay(formatted)
+    const { userId } = useWorkoutStore.getState()
+    if (userId) {
+      await loadDay(formatted, userId)
+    }
   }
 
   const toggleRestDay = async () => {

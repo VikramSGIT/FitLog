@@ -50,6 +50,17 @@ export type Set = {
   updatedAt: string; // ISO 8601 timestamp
 };
 
+export type RestPeriod = {
+  id: string; // Stable, client-generated UUID, Primary Key
+  serverId: string | null;
+  isSynced: boolean;
+  exerciseId: string; // Corresponds to Exercise's stable 'id'
+  position: number;
+  durationSeconds: number;
+  createdAt: string; // ISO 8601 timestamp
+  updatedAt: string; // ISO 8601 timestamp
+};
+
 export const workoutDaySchema: RxJsonSchema<WorkoutDay> = {
   title: 'workout day schema',
   version: 0, // Start at version 0 to avoid migration issues
@@ -135,9 +146,38 @@ export const setSchema: RxJsonSchema<Set> = {
   indexes: ['exerciseId', 'position', 'isSynced', 'workoutDate'],
 };
 
+export const restPeriodSchema: RxJsonSchema<RestPeriod> = {
+  title: 'rest period schema',
+  version: 0,
+  description: 'describes a rest period within an exercise',
+  primaryKey: 'id',
+  type: 'object',
+  properties: {
+    id: { type: 'string', maxLength: 36 },
+    serverId: { type: ['string', 'null'] },
+    isSynced: { type: 'boolean', default: false },
+    exerciseId: { type: 'string', ref: 'exercises', maxLength: 36 },
+    position: { type: 'integer', minimum: 0, maximum: 1000, multipleOf: 1 },
+    durationSeconds: { type: 'integer', minimum: 0 },
+    createdAt: { type: 'string', format: 'date-time' },
+    updatedAt: { type: 'string', format: 'date-time' },
+  },
+  required: [
+    'id',
+    'exerciseId',
+    'position',
+    'durationSeconds',
+    'createdAt',
+    'updatedAt',
+    'isSynced',
+  ],
+  indexes: ['exerciseId', 'position', 'isSynced'],
+};
+
 export type WorkoutDayDoc = RxDocument<WorkoutDay>;
 export type ExerciseDoc = RxDocument<Exercise>;
 export type SetDoc = RxDocument<Set>;
+export type RestPeriodDoc = RxDocument<RestPeriod>;
 
 export type DeletedDocument = {
   id: string; // The local UUID of the deleted document

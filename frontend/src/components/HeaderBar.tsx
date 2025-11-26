@@ -76,15 +76,16 @@ export default function HeaderBar({
     isLoading: dayLoading,
     exercises,
     sets,
+    restPeriods,
     deletedDocumentsCount,
     loadDay,
     dirtySetIds,
   } = useWorkoutStore()
   const hasPendingChanges =
-    dirtySetIds.size > 0 ||
-    day?.isUnsynced ||
-    exercises.some(e => e.isUnsynced === true) ||
-    sets.some(s => s.isUnsynced === true) ||
+    day?.isSynced === false ||
+    exercises.some(e => e.isSynced === false) ||
+    sets.some(s => s.isSynced === false) ||
+    restPeriods.some(r => r.isSynced === false) ||
     deletedDocumentsCount > 0
 
   const [restUpdating, setRestUpdating] = useState(false)

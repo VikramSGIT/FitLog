@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { useWorkoutStore } from '@/store/useWorkoutStore'
 
-const DEBOUNCE_DELAY_MS = 2000;
-
 // onSave should return true if it actually persisted changes, false if there was nothing to save
-export function useDebouncedSaveToRxDB<T>(value: T, onSave: (value: T) => Promise<boolean>) {
+export function useDebouncedSaveToRxDB<T>(value: T, onSave: (value: T) => Promise<boolean>, delay = 2000, manageStatus = true) {
   const setSaving = useWorkoutStore((state) => state.setSaving)
   const registerAutoSave = useWorkoutStore((state) => state.registerAutoSave)
   const timer = useRef<number | null>(null)
@@ -15,16 +13,16 @@ export function useDebouncedSaveToRxDB<T>(value: T, onSave: (value: T) => Promis
   onSaveRef.current = onSave
 
   const triggerSave = useCallback(
-    async (mode: 'auto' | 'manual', manageStatus: boolean) => {
+    async (mode: 'auto' | 'manual', status: boolean) => {
       if (saving.current) return
       saving.current = true
 
-      if (manageStatus) {
+      if (status) {
         setSaving('saving', mode)
       }
       try {
         const didSave = await onSaveRef.current(latestValue.current)
-        if (manageStatus) {
+        if (status) {
           if (didSave) {
           setSaving('saved', mode)
           } else {
@@ -33,7 +31,7 @@ export function useDebouncedSaveToRxDB<T>(value: T, onSave: (value: T) => Promis
           }
         }
       } catch (err) {
-        if (manageStatus) {
+        if (status) {
           setSaving('error', mode)
         } else {
           throw err
@@ -49,14 +47,14 @@ export function useDebouncedSaveToRxDB<T>(value: T, onSave: (value: T) => Promis
     if (timer.current) window.clearTimeout(timer.current)
     timer.current = window.setTimeout(() => {
       timer.current = null
-      triggerSave('auto', false).catch(() => {
+      triggerSave('auto', manageStatus).catch(() => {
         // errors handled inside triggerSave via setSaving
       })
-    }, DEBOUNCE_DELAY_MS)
+    }, delay)
     return () => {
       if (timer.current) window.clearTimeout(timer.current)
     }
-  }, [value, triggerSave])
+  }, [value, delay, manageStatus, triggerSave])
 
   useEffect(() => {
     const flush = async () => {

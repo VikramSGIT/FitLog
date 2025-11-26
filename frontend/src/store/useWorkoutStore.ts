@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { Subscription } from 'rxjs';
 import { getDb } from '@/db/service';
-import { WorkoutDay, Exercise, WorkoutDayDoc } from '@/db/schema';
+import { WorkoutDay, Exercise, WorkoutDayDoc, RestPeriod } from '@/db/schema';
 import type { Set } from '@/db/schema';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -29,9 +29,11 @@ export type WorkoutState = {
   activeDay: WorkoutDayDoc | null;
   exercises: Exercise[];
   sets: Set[];
+  restPeriods: RestPeriod[];
   daySub: Subscription | null;
   exercisesSub: Subscription | null;
   setsSub: Subscription | null;
+  restPeriodsSub: Subscription | null;
   deletedDocumentsSub: Subscription | null;
   deletedDocumentsCount: number;
   selectedDate: string;
@@ -49,12 +51,15 @@ export type WorkoutState = {
   // Actions
   init: (userId: string) => void;
   loadDay: (date: string, userId: string) => Promise<void>;
-  addExercise: (catalogId: string, name: string) => Promise<string>;
+  addExercise: (catalogId: string, name: string, position: number) => Promise<string>;
   updateExercise: (id: string, patch: Partial<Exercise>) => Promise<void>;
   deleteExercise: (id: string) => Promise<void>;
   addSet: (exerciseTempId: string) => Promise<void>;
   updateSet: (id: string, patch: Partial<Set>) => Promise<void>;
   deleteSet: (id: string) => Promise<void>;
+  addRest: (exerciseId: string, position: number) => Promise<void>;
+  updateRest: (id: string, patch: Partial<RestPeriod>) => Promise<void>;
+  deleteRest: (id: string) => Promise<void>;
   updateDay: (id: string, patch: Partial<WorkoutDay>) => Promise<void>;
   sync: () => Promise<void>;
   cleanup: () => void;
@@ -72,9 +77,11 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => {
     activeDay: null,
     exercises: [],
     sets: [],
+    restPeriods: [],
     daySub: null,
     exercisesSub: null,
     setsSub: null,
+    restPeriodsSub: null,
     deletedDocumentsSub: null,
     deletedDocumentsCount: 0,
     selectedDate: toDateString(new Date()),
@@ -112,7 +119,7 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => {
       return loadDay(date, get, set);
     },
     
-    addExercise: (catalogId: string, name: string) => crud.addExercise(catalogId, name, get),
+    addExercise: (catalogId: string, name: string, position: number) => crud.addExercise(catalogId, name, get, position),
 
     updateExercise: async (id, patch) => {
         await crud.updateExercise(id, patch);
@@ -134,6 +141,18 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => {
         await crud.deleteSet(id);
     },
 
+    addRest: async (exerciseId: string, position: number) => {
+      await crud.addRest(exerciseId, position);
+    },
+
+    updateRest: async (id: string, patch: Partial<RestPeriod>) => {
+      await crud.updateRest(id, patch);
+    },
+
+    deleteRest: async (id: string) => {
+      await crud.deleteRest(id);
+    },
+
     updateDay: async (id: string, patch: Partial<WorkoutDay>) => {
         await crud.updateDay(id, patch);
     },
@@ -141,10 +160,11 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => {
     sync: () => sync(get, set),
 
     cleanup: () => {
-      const { daySub, exercisesSub, setsSub, deletedDocumentsSub } = get();
+      const { daySub, exercisesSub, setsSub, restPeriodsSub, deletedDocumentsSub } = get();
       daySub?.unsubscribe();
       exercisesSub?.unsubscribe();
       setsSub?.unsubscribe();
+      restPeriodsSub?.unsubscribe();
       deletedDocumentsSub?.unsubscribe();
     },
 

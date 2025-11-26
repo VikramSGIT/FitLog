@@ -7,7 +7,7 @@ import { useWorkoutStore } from '@/store/useWorkoutStore'
 import SetList from './SetList'
 import { useAutoSave } from '@/hooks/useAutoSave'
 import { ActionIcon, Badge, Button, Card, Divider, Group, Stack, Text, Title, Textarea, Tooltip, useMantineTheme } from '@mantine/core'
-import { IconPlus, IconTrash, IconNote, IconMoonStars } from '@tabler/icons-react'
+import { IconPlus, IconTrash, IconNote, IconMoonStars, IconClock } from '@tabler/icons-react'
 import { DEFAULT_SURFACES, ThemeSurfaces } from '@/theme'
 import { AUTO_SAVE_DELAY_MS } from '@/config'
 import { useMediaQuery } from '@mantine/hooks'
@@ -16,7 +16,7 @@ const DEFAULT_REST_DURATION_SECONDS = 90
 
 export default function ExerciseItem({ exercise }: { exercise: Exercise }) {
   const navigate = useNavigate()
-  const { updateExercise, deleteExercise, addSet, activeDay, isLoading: dayLoading, sets } = useWorkoutStore()
+  const { updateExercise, deleteExercise, addSet, addRest, activeDay, isLoading: dayLoading, sets, restPeriods } = useWorkoutStore()
   const isRestDay = activeDay?.isRestDay ?? false
   const [comment, setComment] = useState(exercise.comment || '')
   const [showNote, setShowNote] = useState<boolean>(() => (exercise.comment || '').trim().length > 0)
@@ -29,8 +29,10 @@ export default function ExerciseItem({ exercise }: { exercise: Exercise }) {
 
   // Check if exercise or any of its sets are unsynced
   const exerciseSets = sets.filter(s => s.exerciseId === exercise.id)
+  const exerciseRests = restPeriods.filter(r => r.exerciseId === exercise.id)
   const hasUnsyncedSets = exerciseSets.some(s => s.isSynced === false)
-  const isUnsaved = exercise.isSynced === false || hasUnsyncedSets
+  const hasUnsyncedRestPeriods = exerciseRests.some(r => r.isSynced === false)
+  const isUnsaved = exercise.isSynced === false || hasUnsyncedSets || hasUnsyncedRestPeriods
 
   const saveComment = useCallback(async (value: string) => {
     if ((exercise.comment || '') !== value) {
@@ -55,13 +57,15 @@ export default function ExerciseItem({ exercise }: { exercise: Exercise }) {
     addSet(exercise.id)
   }
 
-  // addRest is not implemented in the new store yet
-  async function addRest() {
-    // if (dayLoading) return
-    // useWorkoutStore.getState().queueCreateRest(exercise.id, {
-    //   position: nextRestPosition,
-    //   durationSeconds: DEFAULT_REST_DURATION_SECONDS
-    // })
+  async function handleAddRest() {
+    if (dayLoading) return
+    const currentSets = sets.filter(s => s.exerciseId === exercise.id)
+    const currentRests = restPeriods.filter(r => r.exerciseId === exercise.id)
+    const maxSetPos = currentSets.length > 0 ? Math.max(...currentSets.map(s => s.position)) : -1
+    const maxRestPos = currentRests.length > 0 ? Math.max(...currentRests.map(r => r.position)) : -1
+    const nextPos = Math.max(maxSetPos, maxRestPos) + 1
+    
+    addRest(exercise.id, nextPos)
   }
 
   return (
@@ -218,6 +222,19 @@ export default function ExerciseItem({ exercise }: { exercise: Exercise }) {
                   }}
                 >
                   Add Set
+                </Button>
+                <Button
+                  onClick={handleAddRest}
+                  disabled={isRestDay || dayLoading}
+                  variant="default"
+                  leftSection={<IconClock size={16} />}
+                  style={{
+                    background: surfaces.panel,
+                    borderColor: surfaces.border,
+                    color: theme.colorScheme === 'light' ? '#334155' : '#94a3b8'
+                  }}
+                >
+                  Add Rest
                 </Button>
               </Group>
             </Group>

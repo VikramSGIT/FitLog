@@ -44,7 +44,7 @@ const toSelectOptions = (values: string[]) => values.map((value) => ({ value, la
 
 export default function CatalogBrowser({ embedded = false, onClose, headerAddon }: CatalogBrowserProps) {
   const day = useWorkoutStore((s) => s.day)
-  const queueCreateExercise = useWorkoutStore((s) => s.queueCreateExercise)
+  const addExercise = useWorkoutStore((s) => s.addExercise)
   const dayLoading = useWorkoutStore((s) => s.dayLoading)
   const isRestDay = day?.isRestDay ?? false
   const navigate = useNavigate()
@@ -148,7 +148,7 @@ export default function CatalogBrowser({ embedded = false, onClose, headerAddon 
     }
     const exercises = Array.isArray(day.exercises) ? day.exercises : []
     const position = (exercises[exercises.length - 1]?.position ?? 0) + 1
-    queueCreateExercise({ dayId: day.id, catalogId: item.id, nameDisplay: item.name, position })
+    addExercise(item.id, item.name, position)
     if (embedded) {
       onClose?.()
     }

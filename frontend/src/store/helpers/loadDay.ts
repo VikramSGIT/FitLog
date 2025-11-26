@@ -1,6 +1,6 @@
 import { getDb } from '@/db/service';
 import { api } from '@/api/client';
-import { WorkoutDay, Exercise, Set, WorkoutDayDoc } from '@/db/schema';
+import { WorkoutDay, Exercise, Set, RestPeriod, WorkoutDayDoc } from '@/db/schema';
 import { WorkoutState } from '../useWorkoutStore';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -26,12 +26,13 @@ const computeDay = (activeDay: WorkoutDayDoc | null, exercises: Exercise[]): Day
 };
 
 export const loadDay = async (date: string, get: () => WorkoutState, set: (state: Partial<WorkoutState>) => void) => {
-  const { userId, daySub, exercisesSub, setsSub } = get();
+  const { userId, daySub, exercisesSub, setsSub, restPeriodsSub } = get();
   if (!userId) return;
 
   daySub?.unsubscribe();
   exercisesSub?.unsubscribe();
   setsSub?.unsubscribe();
+  restPeriodsSub?.unsubscribe();
 
   set({
     isLoading: true,
@@ -40,6 +41,7 @@ export const loadDay = async (date: string, get: () => WorkoutState, set: (state
     activeDay: null,
     exercises: [],
     sets: [],
+    restPeriods: [],
     day: null
   });
 
@@ -116,6 +118,22 @@ export const loadDay = async (date: string, get: () => WorkoutState, set: (state
               await db.sets.insert(setData);
             }
           }
+
+          if (ex.restPeriods) {
+            for (const rp of ex.restPeriods) {
+              const restData: RestPeriod = {
+                id: uuidv4(),
+                serverId: rp.id,
+                exerciseId: newLocalExerciseId,
+                position: rp.position,
+                durationSeconds: rp.durationSeconds,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+                isSynced: true,
+              };
+              await db.rest_periods.insert(restData);
+            }
+          }
         }
       }
     } catch (error) {
@@ -133,7 +151,7 @@ export const loadDay = async (date: string, get: () => WorkoutState, set: (state
     })
     .$.subscribe(async (dayDoc) => {
       if (!dayDoc) {
-        set({ activeDay: null, exercises: [], sets: [], day: null, dayLoading: false });
+        set({ activeDay: null, exercises: [], sets: [], restPeriods: [], day: null, dayLoading: false });
         return;
       }
 
@@ -152,10 +170,11 @@ export const loadDay = async (date: string, get: () => WorkoutState, set: (state
           const { activeDay } = get();
           set({ exercises: sortedExercises, day: computeDay(activeDay, sortedExercises) });
 
-          const { setsSub: prevSetsSub } = get();
+          const { setsSub: prevSetsSub, restPeriodsSub: prevRestPeriodsSub } = get();
           prevSetsSub?.unsubscribe();
+          prevRestPeriodsSub?.unsubscribe();
 
-          // Step 5: Subscribe to sets for these exercises
+          // Step 5: Subscribe to sets and rest periods for these exercises
           const exerciseIds = sortedExercises.map(ex => ex.id).filter(Boolean) as string[];
           if (exerciseIds.length > 0) {
             const newSetsSub = db.sets
@@ -169,8 +188,20 @@ export const loadDay = async (date: string, get: () => WorkoutState, set: (state
                 set({ sets: sortedSets });
               });
             set({ setsSub: newSetsSub });
+
+            const newRestPeriodsSub = db.rest_periods
+              .find({
+                selector: {
+                  exerciseId: { $in: exerciseIds }
+                }
+              })
+              .$.subscribe(rests => {
+                const sortedRests = [...rests].sort((a, b) => a.position - b.position);
+                set({ restPeriods: sortedRests });
+              });
+            set({ restPeriodsSub: newRestPeriodsSub });
           } else {
-            set({ sets: [], setsSub: null });
+            set({ sets: [], setsSub: null, restPeriods: [], restPeriodsSub: null });
           }
         });
 

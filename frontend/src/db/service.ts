@@ -16,14 +16,17 @@ import {
   WorkoutDay,
   Exercise,
   Set,
+  RestPeriod,
   DeletedDocument,
   workoutDaySchema,
   exerciseSchema,
   setSchema,
+  restPeriodSchema,
   deletedDocumentSchema,
   WorkoutDayDoc,
   ExerciseDoc,
   SetDoc,
+  RestPeriodDoc,
 } from './schema';
 
 // Add plugins
@@ -37,6 +40,7 @@ export type FitLogDatabaseCollections = {
   workout_days: RxCollection<WorkoutDay>;
   exercises: RxCollection<Exercise>;
   sets: RxCollection<Set>;
+  rest_periods: RxCollection<RestPeriod>;
   deleted_documents: RxCollection<DeletedDocument>;
 };
 
@@ -70,6 +74,9 @@ const createDatabase = async () => {
           return this.reps * this.weightKg;
         },
       },
+    },
+    rest_periods: {
+      schema: restPeriodSchema,
     },
     deleted_documents: {
         schema: deletedDocumentSchema,

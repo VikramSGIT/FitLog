@@ -135,6 +135,21 @@ export type SetHistory = {
   isWarmup: boolean;
 };
 
+export type SaveOperation =
+  | { type: 'createDay'; localId: string; workoutDate: string; timezone?: string }
+  | { type: 'createExercise'; localId: string; dayId: string; catalogId: string; position: number; comment?: string }
+  | { type: 'createSet'; localId: string; exerciseId: string; position: number; reps: number; weightKg: number; isWarmup?: boolean }
+  | { type: 'createRest'; localId: string; exerciseId: string; position: number; durationSeconds: number }
+  | { type: 'updateExercise'; exerciseId: string; patch: Partial<{ position: number; comment: string }> }
+  | { type: 'updateSet'; setId: string; patch: Partial<{ position: number; reps: number; weightKg: number; isWarmup: boolean }> }
+  | { type: 'updateRest'; restId: string; patch: Partial<{ position: number; durationSeconds: number }> }
+  | { type: 'reorderExercises'; dayId: string; orderedIds: string[] }
+  | { type: 'reorderSets'; exerciseId: string; orderedIds: string[] }
+  | { type: 'deleteExercise'; exerciseId: string }
+  | { type: 'deleteSet'; setId: string }
+  | { type: 'deleteRest'; restId: string }
+  | { type: 'updateDay'; dayId: string; isRestDay: boolean };
+
 export const api = {
   // Catalog search
   searchCatalog: (params: {
@@ -302,21 +317,7 @@ export const api = {
 
   // Batch save
   saveBatch: (
-    ops: Array<
-      | { type: 'createDay'; localId: string; workoutDate: string; timezone?: string }
-      | { type: 'createExercise'; localId: string; dayId: string; catalogId: string; position: number; comment?: string }
-      | { type: 'createSet'; localId: string; exerciseId: string; position: number; reps: number; weightKg: number; isWarmup?: boolean }
-      | { type: 'createRest'; localId: string; exerciseId: string; position: number; durationSeconds: number }
-      | { type: 'updateExercise'; exerciseId: string; patch: Partial<{ position: number; comment: string }> }
-      | { type: 'updateSet'; setId: string; patch: Partial<{ position: number; reps: number; weightKg: number; isWarmup: boolean }> }
-      | { type: 'updateRest'; restId: string; patch: Partial<{ position: number; durationSeconds: number }> }
-      | { type: 'reorderExercises'; dayId: string; orderedIds: string[] }
-      | { type: 'reorderSets'; exerciseId: string; orderedIds: string[] }
-      | { type: 'deleteExercise'; exerciseId: string }
-      | { type: 'deleteSet'; setId: string }
-      | { type: 'deleteRest'; restId: string }
-      | { type: 'updateDay'; dayId: string; isRestDay: boolean }
-    >,
+    ops: Array<SaveOperation>,
     idempotencyKey?: string,
     clientEpoch?: number
   ) =>

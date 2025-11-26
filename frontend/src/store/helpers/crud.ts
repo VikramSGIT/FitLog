@@ -1,10 +1,10 @@
 import { getDb } from '@/db/service';
-import { WorkoutDay, Exercise } from '@/db/schema';
+import { WorkoutDay, Exercise, RestPeriod } from '@/db/schema';
 import type { Set } from '@/db/schema';
 import { v4 as uuidv4 } from 'uuid';
 import { WorkoutState } from '../useWorkoutStore';
 
-export const addExercise = async (catalogId: string, name: string, get: () => WorkoutState): Promise<string> => {
+export const addExercise = async (catalogId: string, name: string, get: () => WorkoutState, position: number): Promise<string> => {
   const { userId, selectedDate, exercises, activeDay } = get();
   if (!userId) return '';
 
@@ -32,7 +32,7 @@ export const addExercise = async (catalogId: string, name: string, get: () => Wo
     dayId: dayDoc.id,
     catalogId: catalogId,
     name: name,
-    position: exercises.length,
+    position: position, // Use the provided position
     isSynced: false, // Mark as not synced
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -67,11 +67,17 @@ export const deleteExercise = async (id: string) => {
 };
 
 export const addSet = async (exerciseId: string, get: () => WorkoutState) => {
-  const { userId, selectedDate, sets } = get();
+  const { userId, selectedDate, sets, restPeriods } = get();
   if (!userId) return;
 
   const db = await getDb();
+  
   const exerciseSets = sets.filter(s => s.exerciseId === exerciseId);
+  const exerciseRests = restPeriods.filter(r => r.exerciseId === exerciseId);
+  
+  const maxSetPos = exerciseSets.length > 0 ? Math.max(...exerciseSets.map(s => s.position)) : -1;
+  const maxRestPos = exerciseRests.length > 0 ? Math.max(...exerciseRests.map(r => r.position)) : -1;
+  const nextPosition = Math.max(maxSetPos, maxRestPos) + 1;
 
   const newSet: Set = {
     id: uuidv4(),
@@ -79,7 +85,7 @@ export const addSet = async (exerciseId: string, get: () => WorkoutState) => {
     exerciseId: exerciseId,
     userId: userId,
     workoutDate: selectedDate,
-    position: exerciseSets.length,
+    position: nextPosition,
     reps: 1,
     weightKg: 0,
     isWarmup: false,
@@ -113,12 +119,46 @@ export const deleteSet = async (id: string) => {
       });
     }
 
-    // Mark parent exercise as unsynced when a set is deleted
-    const exerciseDoc = await db.exercises.findOne(doc.exerciseId).exec();
-    if (exerciseDoc) {
-      await exerciseDoc.incrementalPatch({ isSynced: false });
-    }
+    await doc.remove();
+  }
+};
 
+export const addRest = async (exerciseId: string, position: number) => {
+  const db = await getDb();
+  const newRest: RestPeriod = {
+    id: uuidv4(),
+    serverId: null,
+    exerciseId: exerciseId,
+    position: position,
+    durationSeconds: 90,
+    isSynced: false,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  await db.rest_periods.insert(newRest);
+};
+
+export const updateRest = async (id: string, patch: Partial<RestPeriod>) => {
+  const db = await getDb();
+  const doc = await db.rest_periods.findOne(id).exec();
+  if (doc) {
+    await doc.incrementalPatch({ ...patch, isSynced: false });
+  }
+};
+
+export const deleteRest = async (id: string) => {
+  const db = await getDb();
+  const doc = await db.rest_periods.findOne(id).exec();
+  if (doc) {
+    // Track deletion for syncing if it has a serverId
+    if (doc.serverId) {
+      await db.deleted_documents.insert({
+        id: doc.id,
+        serverId: doc.serverId,
+        collectionName: 'rest_periods',
+        deletedAt: new Date().toISOString(),
+      });
+    }
     await doc.remove();
   }
 };

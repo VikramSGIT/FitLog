@@ -1,28 +1,18 @@
-import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react'
+import React from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
-  ActionIcon,
-  Badge,
   Box,
-  Button,
-  Container,
-  Group,
   Loader,
-  Paper,
-  ScrollArea,
-  Stack,
-  Text,
-  Title,
   useMantineTheme
 } from '@mantine/core'
-import { IconArrowLeft } from '@tabler/icons-react'
-import { notifications } from '@mantine/notifications'
 import HeaderBar from '@/components/HeaderBar'
 import { DEFAULT_SURFACES, ThemeSurfaces, useThemePreset } from '@/theme'
-import { api, CatalogRecord, ExerciseHistoryItem } from '@/api/client'
+import { api } from '@/api/client'
 import { useWorkoutStore } from '@/store/useWorkoutStore'
 import { useMediaQuery } from '@mantine/hooks'
-import { format } from 'date-fns'
+import { useExerciseData } from '@/hooks/useExerciseData'
+import { MobileExerciseDetails } from '@/pages/ExerciseDetails/MobileExerciseDetails'
+import { DesktopExerciseDetails } from '@/pages/ExerciseDetails/DesktopExerciseDetails'
 
 export default function ExerciseDetailsPage() {
   const { id } = useParams<{ id: string }>()
@@ -30,209 +20,37 @@ export default function ExerciseDetailsPage() {
   const theme = useMantineTheme()
   const { preset } = useThemePreset()
   const isMobile = useMediaQuery('(max-width: 640px)')
-  const flush = useWorkoutStore((s) => s.flush)
-  const saving = useWorkoutStore((s) => s.saving)
-  const lastSaveMode = useWorkoutStore((s) => s.lastSaveMode)
-  const lastSavedAt = useWorkoutStore((s) => s.lastSavedAt)
-  const setDay = useWorkoutStore((s) => s.setDay)
-  const setDayLoading = useWorkoutStore((s) => s.setDayLoading)
-  const day = useWorkoutStore((s) => s.day)
-  const opLog = useWorkoutStore((s) => s.opLog)
+  
+  const sync = useWorkoutStore((s) => s.sync)
+  const saveStatus = useWorkoutStore((s) => s.saveStatus)
+  const saveMode = useWorkoutStore((s) => s.saveMode)
+  const lastSavedAt = null 
 
-  const [loading, setLoading] = useState(true)
-  const [exercise, setExercise] = useState<CatalogRecord | null>(null)
-  const [highestWeight, setHighestWeight] = useState(0)
-  const [history, setHistory] = useState<ExerciseHistoryItem[]>([])
-  const [hasMore, setHasMore] = useState(false)
-  const [loadingMore, setLoadingMore] = useState(false)
-  const scrollAreaRef = useRef<HTMLDivElement>(null)
-  const loadMoreTriggerRef = useRef<HTMLDivElement>(null)
+  const {
+    loading,
+    exercise,
+    highestWeight,
+    mergedHistory,
+    hasMore,
+    loadingMore,
+    loadMoreHistory
+  } = useExerciseData(id)
 
   const surfaces = (theme.other?.surfaces as ThemeSurfaces) ?? DEFAULT_SURFACES
   const baseTextColor =
     (theme.other?.textColor as string) ?? (preset.colorScheme === 'light' ? '#0f172a' : '#f8fafc')
-  const mutedTextColor =
-    (theme.other?.mutedText as string) ??
-    (preset.colorScheme === 'light' ? 'rgba(15, 23, 42, 0.65)' : 'rgba(226, 232, 240, 0.72)')
 
-  // Check if there are unsaved changes for the current day and this catalog ID
-  const hasUnsavedChanges = useMemo(() => {
-    if (!day || !id || opLog.length === 0) return false
-    
-    // Check if opLog contains operations for exercises matching this catalog ID
-    const dayId = day.id
-    const hasRelevantOps = opLog.some((op) => {
-      if (op.type === 'createExercise') {
-        return op.dayId === dayId && op.catalogId === id
-      }
-      if (op.type === 'createSet') {
-        // Check if the set belongs to an exercise with this catalog ID
-        const exerciseId = op.exerciseId?.replace('temp:', '') || op.exerciseId
-        const exercise = (day.exercises || []).find((ex) => {
-          return ex.id === exerciseId || ex.id === `temp-${exerciseId}` || exerciseId === `temp-${ex.id}`
-        })
-        return exercise?.catalogId === id
-      }
-      if (op.type === 'deleteSet' || op.type === 'updateSet') {
-        // For deleteSet and updateSet, we need to find the set's exercise
-        const setId = op.id?.replace('temp:', '') || op.id
-        const exercise = (day.exercises || []).find((ex) => {
-          return ex.sets?.some((set) => set.id === setId || set.id === `temp-${setId}` || setId === `temp-${set.id}`)
-        })
-        return exercise?.catalogId === id
-      }
-      if (op.type === 'updateExercise' || op.type === 'deleteExercise') {
-        const exerciseId = op.id?.replace('temp:', '') || op.id
-        const exercise = (day.exercises || []).find((ex) => {
-          return ex.id === exerciseId || ex.id === `temp-${exerciseId}` || exerciseId === `temp-${ex.id}`
-        })
-        return exercise?.catalogId === id
-      }
-      return false
-    })
-    
-    return hasRelevantOps
-  }, [day, id, opLog])
-
-  // Get the current day's date string
-  const currentDayDateStr = useMemo(() => {
-    if (!day || !day.workoutDate) return null
-    return day.workoutDate.includes('T')
-      ? day.workoutDate.split('T')[0]
-      : day.workoutDate
-  }, [day])
-
-  // Merge current day's unsaved exercises with history
-  const mergedHistory = useMemo(() => {
-    // Only merge if there are unsaved changes for this catalog ID and we have a current day date
-    if (!day || !id || !currentDayDateStr || !hasUnsavedChanges) return history
-
-    // Find exercises matching this catalog ID
-    const matchingExercises = (day.exercises || []).filter(
-      (ex) => ex.catalogId === id && ex.sets && ex.sets.length > 0
-    )
-
-    if (matchingExercises.length === 0) return history
-
-    // Convert current day's sets to history format
-    const currentDaySets: Array<{ reps: number; weightKg: number; isWarmup: boolean }> = []
-    matchingExercises.forEach((ex) => {
-      ex.sets.forEach((set) => {
-        currentDaySets.push({
-          reps: set.reps,
-          weightKg: set.weightKg,
-          isWarmup: set.isWarmup || false
-        })
-      })
-    })
-
-    if (currentDaySets.length === 0) return history
-
-    const currentDayItem: ExerciseHistoryItem & { isUnsaved?: boolean } = {
-      workoutDate: currentDayDateStr,
-      sets: currentDaySets,
-      isUnsaved: true // Mark as unsaved since we only merge when hasUnsavedChanges is true
-    }
-
-    // Check if current day is already in history - only replace if it matches the exact date
-    const existingIndex = history.findIndex(
-      (item) => item.workoutDate === currentDayDateStr
-    )
-
-    if (existingIndex >= 0) {
-      // Replace existing entry with current day's data (which includes unsaved changes)
-      const newHistory = [...history]
-      newHistory[existingIndex] = currentDayItem
-      return newHistory
-    } else {
-      // Prepend current day to history
-      return [currentDayItem, ...history]
-    }
-  }, [day, id, history, hasUnsavedChanges, currentDayDateStr])
-
-  // Helper to check if a history item is unsaved - only for the current day's date
-  const isUnsaved = useCallback((workoutDate: string) => {
-    // Only mark as unsaved if:
-    // 1. There are unsaved changes for this catalog ID
-    // 2. The workout date matches the current day's date
-    if (!hasUnsavedChanges || !currentDayDateStr) return false
-    return workoutDate === currentDayDateStr
-  }, [hasUnsavedChanges, currentDayDateStr])
-
-  const loadMoreHistory = useCallback(async (offset: number) => {
-    if (!id || loadingMore) return
-    setLoadingMore(true)
+  const handleHistoryItemClick = async (date: string) => {
     try {
-      const statsData = await api.getExerciseStats(id, 5, offset)
-      if (statsData) {
-        setHistory((prev) => [...prev, ...statsData.history])
-        setHasMore(statsData.hasMore || false)
-      }
-    } catch (error: unknown) {
-    } finally {
-      setLoadingMore(false)
+       const userId = useWorkoutStore.getState().userId
+       if (userId) {
+          await useWorkoutStore.getState().loadDay(date, userId)
+       }
+       navigate('/')
+    } catch (err) {
+       console.error(err)
     }
-  }, [id, loadingMore])
-
-  useEffect(() => {
-    if (!id) {
-      navigate('/catalog')
-      return
-    }
-
-    const loadData = async () => {
-      setLoading(true)
-      try {
-        const [exerciseData, statsData] = await Promise.all([
-          api.getCatalogEntry(id),
-          api.getExerciseStats(id, 5, 0).catch(() => null)
-        ])
-        setExercise(exerciseData)
-        if (statsData) {
-          setHighestWeight(statsData.highestWeightKg)
-          setHistory(statsData.history || [])
-          setHasMore(statsData.hasMore || false)
-        }
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : 'Failed to load exercise details'
-        notifications.show({
-          title: 'Error',
-          message,
-          color: 'red'
-        })
-        navigate('/catalog')
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    loadData()
-  }, [id, navigate])
-
-  // Infinite scroll observer
-  useEffect(() => {
-    if (!hasMore || loadingMore) return
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && hasMore && !loadingMore) {
-          loadMoreHistory(mergedHistory.length)
-        }
-      },
-      { threshold: 0.1 }
-    )
-
-    const trigger = loadMoreTriggerRef.current
-    if (trigger) {
-      observer.observe(trigger)
-    }
-
-    return () => {
-      if (trigger) {
-        observer.unobserve(trigger)
-      }
-    }
-  }, [hasMore, loadingMore, mergedHistory.length, loadMoreHistory])
+  }
 
   if (loading) {
     return (
@@ -271,10 +89,10 @@ export default function ExerciseDetailsPage() {
       {!isMobile && (
         <HeaderBar
           onBrowseCatalog={() => navigate('/catalog')}
-          onSave={() => flush('manual')}
-          saving={saving}
-          saveMode={lastSaveMode}
-          lastSavedAt={lastSavedAt}
+          onSave={() => sync()}
+          saving={saveStatus === 'saving' ? 'saving' : (saveStatus === 'saved' ? 'saved' : 'idle')}
+          saveMode={saveMode}
+          lastSavedAt={lastSavedAt} 
           onLogout={async () => {
             try {
               await api.logout()
@@ -285,555 +103,28 @@ export default function ExerciseDetailsPage() {
         />
       )}
       {isMobile ? (
-        <Stack gap="md" style={{ flex: 1, minHeight: 0, overflow: 'hidden', padding: '16px' }}>
-          <Group justify="space-between" align="center">
-            <ActionIcon
-              variant="outline"
-              color={theme.primaryColor}
-              radius="md"
-              size="lg"
-              onClick={() => navigate(-1)}
-              aria-label="Back"
-            >
-              <IconArrowLeft size={18} />
-            </ActionIcon>
-            <Title order={3} style={{ margin: 0, flex: 1, textAlign: 'center' }}>
-              {exercise.name}
-            </Title>
-            <div style={{ width: 40 }} />
-          </Group>
-          <ScrollArea style={{ flex: 1, minHeight: 0 }}>
-            <Stack gap="md">
-              <Stack gap="md" align="center">
-                {exercise.hasImage && (
-                  <div
-                    style={{
-                      width: isMobile ? 200 : 240,
-                      height: isMobile ? 200 : 240,
-                      borderRadius: 12,
-                      overflow: 'hidden',
-                      border: `1px solid ${surfaces.border}`,
-                      flexShrink: 0,
-                      background: '#ffffff',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }}
-                  >
-                    <img
-                      src={`${import.meta.env.VITE_API_BASE_URL || ''}/api/catalog/entries/${exercise.id}/image`}
-                      alt={exercise.name}
-                      style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
-                    />
-                  </div>
-                )}
-                {!isMobile && (
-                  <Title order={2} style={{ textAlign: 'center' }}>{exercise.name}</Title>
-                )}
-                <Group gap="sm" wrap="wrap" justify="center">
-                {exercise.type && (
-                  <Badge color={theme.primaryColor} variant="light">
-                    {exercise.type}
-                  </Badge>
-                )}
-                {exercise.bodyPart && (
-                  <Badge color="blue" variant="light">
-                    {exercise.bodyPart}
-                  </Badge>
-                )}
-                {exercise.equipment && (
-                  <Badge color="grape" variant="light">
-                    {exercise.equipment}
-                  </Badge>
-                )}
-                {exercise.level && (
-                  <Badge color="cyan" variant="light">
-                    {exercise.level}
-                  </Badge>
-                )}
-              </Group>
-            </Stack>
-
-            {exercise.description && (
-              <Paper
-                p="md"
-                radius="md"
-                withBorder
-                style={{
-                  background: surfaces.card,
-                  borderColor: surfaces.border
-                }}
-              >
-                <Stack gap={4}>
-                  <Text size="sm" fw={600} style={{ color: mutedTextColor }}>
-                    Description
-                  </Text>
-                  <Text size="sm" style={{ color: baseTextColor }}>
-                    {exercise.description}
-                  </Text>
-                </Stack>
-              </Paper>
-            )}
-
-            {(exercise.primaryMuscles?.length > 0 || exercise.secondaryMuscles?.length > 0) && (
-              <Stack gap="md">
-                {exercise.primaryMuscles && exercise.primaryMuscles.length > 0 && (
-                  <Paper
-                    p="md"
-                    radius="md"
-                    withBorder
-                    style={{
-                      background: surfaces.card,
-                      borderColor: surfaces.border
-                    }}
-                  >
-                    <Stack gap="xs">
-                      <Text size="sm" fw={600} style={{ color: mutedTextColor }}>
-                        Primary Muscles
-                      </Text>
-                      <Group gap="xs" wrap="wrap">
-                        {exercise.primaryMuscles.map((muscle, idx) => (
-                          <Badge key={idx} color="orange" variant="light">
-                            {muscle}
-                          </Badge>
-                        ))}
-                      </Group>
-                    </Stack>
-                  </Paper>
-                )}
-                {exercise.secondaryMuscles && exercise.secondaryMuscles.length > 0 && (
-                  <Paper
-                    p="md"
-                    radius="md"
-                    withBorder
-                    style={{
-                      background: surfaces.card,
-                      borderColor: surfaces.border
-                    }}
-                  >
-                    <Stack gap="xs">
-                      <Text size="sm" fw={600} style={{ color: mutedTextColor }}>
-                        Secondary Muscles
-                      </Text>
-                      <Group gap="xs" wrap="wrap">
-                        {exercise.secondaryMuscles.map((muscle, idx) => (
-                          <Badge key={idx} color="gray" variant="light">
-                            {muscle}
-                          </Badge>
-                        ))}
-                      </Group>
-                    </Stack>
-                  </Paper>
-                )}
-              </Stack>
-            )}
-
-            <Stack gap="md" mt="xl">
-              <Title order={3}>Your Stats</Title>
-              {highestWeight > 0 && (
-                <Paper
-                  p="md"
-                  radius="md"
-                  withBorder
-                  style={{
-                    background: surfaces.card,
-                    borderColor: surfaces.border
-                  }}
-                >
-                  <Stack gap={4}>
-                    <Text size="sm" style={{ color: mutedTextColor }}>
-                      Highest Weight Lifted
-                    </Text>
-                    <Text size="xl" fw={600}>
-                      {highestWeight.toFixed(1)} kg
-                    </Text>
-                  </Stack>
-                </Paper>
-              )}
-
-              {mergedHistory.length > 0 && (
-                <Stack gap="md" mt="md">
-                  <Title order={4}>Exercise History</Title>
-                  <ScrollArea
-                    h={isMobile ? 400 : 500}
-                    type="scroll"
-                    style={{ width: '100%' }}
-                    viewportRef={scrollAreaRef}
-                  >
-                    <Stack gap="md">
-                      {mergedHistory.map((item) => {
-                        const unsaved = isUnsaved(item.workoutDate) || (item as any).isUnsaved
-                        return (
-                          <Paper
-                            key={item.workoutDate}
-                            p="md"
-                            radius="md"
-                            withBorder
-                            style={{
-                              background: unsaved 
-                                ? (preset.colorScheme === 'light' 
-                                    ? 'rgba(254, 226, 226, 0.5)' 
-                                    : 'rgba(127, 29, 29, 0.3)')
-                                : surfaces.card,
-                              borderColor: unsaved 
-                                ? (preset.colorScheme === 'light' 
-                                    ? 'rgba(220, 38, 38, 0.4)' 
-                                    : 'rgba(248, 113, 113, 0.4)')
-                                : surfaces.border,
-                              cursor: 'pointer'
-                            }}
-                            onClick={async () => {
-                              try {
-                                setDayLoading(true)
-                                const res = await api.getDayByDate(item.workoutDate, true)
-                                if ('day' in (res as any) && (res as any).day === null) {
-                                  const created = await api.createDay(item.workoutDate)
-                                  setDay(created)
-                                } else {
-                                  setDay(res as any)
-                                }
-                                navigate('/')
-                              } catch (err) {
-                              } finally {
-                                setDayLoading(false)
-                              }
-                            }}
-                          >
-                            <Stack gap="sm">
-                              <Group justify="space-between" align="center">
-                                <Text fw={600}>
-                                  {format(new Date(item.workoutDate), 'MMMM d, yyyy')}
-                                </Text>
-                                {unsaved && (
-                                  <Badge color="red" variant="light" size="sm">
-                                    Unsaved
-                                  </Badge>
-                                )}
-                              </Group>
-                              <Group gap="xs" wrap="wrap">
-                                {item.sets.map((set, idx) => (
-                                  <Badge
-                                    key={idx}
-                                    variant={set.isWarmup ? 'light' : 'filled'}
-                                    color={set.isWarmup ? 'gray' : theme.primaryColor}
-                                  >
-                                    {set.reps} × {set.weightKg.toFixed(1)} kg
-                                    {set.isWarmup && ' (warmup)'}
-                                  </Badge>
-                                ))}
-                              </Group>
-                            </Stack>
-                          </Paper>
-                        )
-                      })}
-                      {hasMore && (
-                        <div ref={loadMoreTriggerRef} style={{ height: 20, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                          {loadingMore && <Loader size="sm" />}
-                        </div>
-                      )}
-                    </Stack>
-                  </ScrollArea>
-                </Stack>
-              )}
-
-              {history.length === 0 && highestWeight === 0 && (
-                <Paper
-                  p="md"
-                  radius="md"
-                  withBorder
-                  style={{
-                    background: surfaces.card,
-                    borderColor: surfaces.border
-                  }}
-                >
-                  <Text size="sm" style={{ color: mutedTextColor }}>
-                    No exercise history yet. Start tracking your workouts to see your progress here!
-                  </Text>
-                </Paper>
-              )}
-            </Stack>
-            </Stack>
-          </ScrollArea>
-        </Stack>
+        <MobileExerciseDetails 
+          exercise={exercise}
+          mergedHistory={mergedHistory}
+          highestWeight={highestWeight}
+          hasMore={hasMore}
+          loadingMore={loadingMore}
+          loadMoreHistory={loadMoreHistory}
+          handleHistoryItemClick={handleHistoryItemClick}
+          navigate={navigate}
+        />
       ) : (
-        <Container size="lg" py="xl">
-          <Paper
-            radius="lg"
-            withBorder
-            p="xl"
-            style={{
-              background: surfaces.panel,
-              borderColor: surfaces.border,
-              color: baseTextColor
-            }}
-          >
-            <Stack gap="lg">
-              {!isMobile && (
-                <Group justify="space-between" align="center">
-                <Button
-                  variant="subtle"
-                  leftSection={<IconArrowLeft size={16} />}
-                  onClick={() => navigate(-1)}
-                  style={{ alignSelf: 'flex-start' }}
-                >
-                  Back
-                </Button>
-                </Group>
-              )}
-
-              <Stack gap="md" align="center">
-                {exercise.hasImage && (
-                  <div
-                    style={{
-                      width: isMobile ? 200 : 240,
-                      height: isMobile ? 200 : 240,
-                      borderRadius: 12,
-                      overflow: 'hidden',
-                      border: `1px solid ${surfaces.border}`,
-                      flexShrink: 0,
-                      background: '#ffffff',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }}
-                  >
-                    <img
-                      src={`${import.meta.env.VITE_API_BASE_URL || ''}/api/catalog/entries/${exercise.id}/image`}
-                      alt={exercise.name}
-                      style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
-                    />
-                  </div>
-                )}
-                {!isMobile && (
-                  <Title order={2} style={{ textAlign: 'center' }}>{exercise.name}</Title>
-                )}
-                <Group gap="sm" wrap="wrap" justify="center">
-                  {exercise.type && (
-                    <Badge color={theme.primaryColor} variant="light">
-                      {exercise.type}
-                    </Badge>
-                  )}
-                  {exercise.bodyPart && (
-                    <Badge color="blue" variant="light">
-                      {exercise.bodyPart}
-                    </Badge>
-                  )}
-                  {exercise.equipment && (
-                    <Badge color="grape" variant="light">
-                      {exercise.equipment}
-                    </Badge>
-                  )}
-                  {exercise.level && (
-                    <Badge color="cyan" variant="light">
-                      {exercise.level}
-                    </Badge>
-                  )}
-                </Group>
-              </Stack>
-
-              {exercise.description && (
-                <Paper
-                  p="md"
-                  radius="md"
-                  withBorder
-                  style={{
-                    background: surfaces.card,
-                    borderColor: surfaces.border
-                  }}
-                >
-                  <Stack gap={4}>
-                    <Text size="sm" fw={600} style={{ color: mutedTextColor }}>
-                      Description
-                    </Text>
-                    <Text size="sm" style={{ color: baseTextColor }}>
-                      {exercise.description}
-                    </Text>
-                  </Stack>
-                </Paper>
-              )}
-
-              {(exercise.primaryMuscles?.length > 0 || exercise.secondaryMuscles?.length > 0) && (
-                <Stack gap="md">
-                  {exercise.primaryMuscles && exercise.primaryMuscles.length > 0 && (
-                    <Paper
-                      p="md"
-                      radius="md"
-                      withBorder
-                      style={{
-                        background: surfaces.card,
-                        borderColor: surfaces.border
-                      }}
-                    >
-                      <Stack gap="xs">
-                        <Text size="sm" fw={600} style={{ color: mutedTextColor }}>
-                          Primary Muscles
-                        </Text>
-                        <Group gap="xs" wrap="wrap">
-                          {exercise.primaryMuscles.map((muscle, idx) => (
-                            <Badge key={idx} color="orange" variant="light">
-                              {muscle}
-                            </Badge>
-                          ))}
-                        </Group>
-                      </Stack>
-                    </Paper>
-                  )}
-                  {exercise.secondaryMuscles && exercise.secondaryMuscles.length > 0 && (
-                    <Paper
-                      p="md"
-                      radius="md"
-                      withBorder
-                      style={{
-                        background: surfaces.card,
-                        borderColor: surfaces.border
-                      }}
-                    >
-                      <Stack gap="xs">
-                        <Text size="sm" fw={600} style={{ color: mutedTextColor }}>
-                          Secondary Muscles
-                        </Text>
-                        <Group gap="xs" wrap="wrap">
-                          {exercise.secondaryMuscles.map((muscle, idx) => (
-                            <Badge key={idx} color="gray" variant="light">
-                              {muscle}
-                            </Badge>
-                          ))}
-                        </Group>
-                      </Stack>
-                    </Paper>
-                  )}
-                </Stack>
-              )}
-
-              <Stack gap="md" mt="xl">
-                <Title order={3}>Your Stats</Title>
-                {highestWeight > 0 && (
-                  <Paper
-                    p="md"
-                    radius="md"
-                    withBorder
-                    style={{
-                      background: surfaces.card,
-                      borderColor: surfaces.border
-                    }}
-                  >
-                    <Stack gap={4}>
-                      <Text size="sm" style={{ color: mutedTextColor }}>
-                        Highest Weight Lifted
-                      </Text>
-                      <Text size="xl" fw={600}>
-                        {highestWeight.toFixed(1)} kg
-                      </Text>
-                    </Stack>
-                  </Paper>
-                )}
-
-                {mergedHistory.length > 0 && (
-                  <Stack gap="md" mt="md">
-                    <Title order={4}>Exercise History</Title>
-                    <ScrollArea
-                      h={isMobile ? 400 : 500}
-                      type="scroll"
-                      style={{ width: '100%' }}
-                      viewportRef={scrollAreaRef}
-                    >
-                      <Stack gap="md">
-                        {mergedHistory.map((item) => {
-                          const unsaved = isUnsaved(item.workoutDate) || (item as any).isUnsaved
-                          return (
-                            <Paper
-                              key={item.workoutDate}
-                              p="md"
-                              radius="md"
-                              withBorder
-                              style={{
-                                background: unsaved 
-                                  ? (preset.colorScheme === 'light' 
-                                      ? 'rgba(254, 226, 226, 0.5)' 
-                                      : 'rgba(127, 29, 29, 0.3)')
-                                  : surfaces.card,
-                                borderColor: unsaved 
-                                  ? (preset.colorScheme === 'light' 
-                                      ? 'rgba(220, 38, 38, 0.4)' 
-                                      : 'rgba(248, 113, 113, 0.4)')
-                                  : surfaces.border,
-                                cursor: 'pointer'
-                              }}
-                              onClick={async () => {
-                                try {
-                                  setDayLoading(true)
-                                  const res = await api.getDayByDate(item.workoutDate, true)
-                                  if ('day' in (res as any) && (res as any).day === null) {
-                                    const created = await api.createDay(item.workoutDate)
-                                    setDay(created)
-                                  } else {
-                                    setDay(res as any)
-                                  }
-                                  navigate('/')
-                                } catch (err) {
-                                } finally {
-                                  setDayLoading(false)
-                                }
-                              }}
-                            >
-                              <Stack gap="sm">
-                                <Group justify="space-between" align="center">
-                                  <Text fw={600}>
-                                    {format(new Date(item.workoutDate), 'MMMM d, yyyy')}
-                                  </Text>
-                                  {unsaved && (
-                                    <Badge color="red" variant="light" size="sm">
-                                      Unsaved
-                                    </Badge>
-                                  )}
-                                </Group>
-                                <Group gap="xs" wrap="wrap">
-                                  {item.sets.map((set, idx) => (
-                                    <Badge
-                                      key={idx}
-                                      variant={set.isWarmup ? 'light' : 'filled'}
-                                      color={set.isWarmup ? 'gray' : theme.primaryColor}
-                                    >
-                                      {set.reps} × {set.weightKg.toFixed(1)} kg
-                                      {set.isWarmup && ' (warmup)'}
-                                    </Badge>
-                                  ))}
-                                </Group>
-                              </Stack>
-                            </Paper>
-                          )
-                        })}
-                        {hasMore && (
-                          <div ref={loadMoreTriggerRef} style={{ height: 20, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                            {loadingMore && <Loader size="sm" />}
-                          </div>
-                        )}
-                      </Stack>
-                    </ScrollArea>
-                  </Stack>
-                )}
-
-                {mergedHistory.length === 0 && highestWeight === 0 && (
-                  <Paper
-                    p="md"
-                    radius="md"
-                    withBorder
-                    style={{
-                      background: surfaces.card,
-                      borderColor: surfaces.border
-                    }}
-                  >
-                    <Text size="sm" style={{ color: mutedTextColor }}>
-                      No exercise history yet. Start tracking your workouts to see your progress here!
-                    </Text>
-                  </Paper>
-                )}
-              </Stack>
-            </Stack>
-          </Paper>
-        </Container>
+        <DesktopExerciseDetails
+          exercise={exercise}
+          mergedHistory={mergedHistory}
+          highestWeight={highestWeight}
+          hasMore={hasMore}
+          loadingMore={loadingMore}
+          loadMoreHistory={loadMoreHistory}
+          handleHistoryItemClick={handleHistoryItemClick}
+          navigate={navigate}
+        />
       )}
     </Box>
   )
 }
-

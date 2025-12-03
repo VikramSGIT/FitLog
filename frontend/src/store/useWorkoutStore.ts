@@ -1,9 +1,8 @@
-import { create } from 'zustand';
-import { Subscription } from 'rxjs';
-import { getDb } from '@/db/service';
-import { WorkoutDay, Exercise, WorkoutDayDoc } from '@/db/schema';
-import type { Set } from '@/db/schema';
-import { v4 as uuidv4 } from 'uuid';
+import { create } from 'zustand'
+import type { Subscription } from '@/db/types'
+import { getDb } from '@/db/service'
+import { WorkoutDay, Exercise } from '@/db/schema'
+import type { Set } from '@/db/schema'
 
 import { sync } from './helpers/sync';
 import { loadDay } from './helpers/loadDay';
@@ -24,9 +23,16 @@ type DayWithExercises = {
   userId: string;
 };
 
+type QueueCreateExercisePayload = {
+  dayId: string;
+  catalogId: string;
+  nameDisplay: string;
+  position: number;
+};
+
 export type WorkoutState = {
   // State
-  activeDay: WorkoutDayDoc | null;
+  activeDay: WorkoutDay | null;
   exercises: Exercise[];
   sets: Set[];
   daySub: Subscription | null;
@@ -49,13 +55,14 @@ export type WorkoutState = {
   // Actions
   init: (userId: string) => void;
   loadDay: (date: string, userId: string) => Promise<void>;
-  addExercise: (catalogId: string, name: string) => Promise<string>;
+  addExercise: (catalogId: string, name: string, position?: number) => Promise<string>;
   updateExercise: (id: string, patch: Partial<Exercise>) => Promise<void>;
   deleteExercise: (id: string) => Promise<void>;
   addSet: (exerciseTempId: string) => Promise<void>;
   updateSet: (id: string, patch: Partial<Set>) => Promise<void>;
   deleteSet: (id: string) => Promise<void>;
   updateDay: (id: string, patch: Partial<WorkoutDay>) => Promise<void>;
+  queueCreateExercise: (payload: QueueCreateExercisePayload) => Promise<void>;
   sync: () => Promise<void>;
   cleanup: () => void;
   setSaving: (status: SaveStatus, mode: SaveMode) => void;
@@ -112,7 +119,7 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => {
       return loadDay(date, get, set);
     },
     
-    addExercise: (catalogId: string, name: string) => crud.addExercise(catalogId, name, get),
+    addExercise: (catalogId: string, name: string, position?: number) => crud.addExercise(catalogId, name, get, position),
 
     updateExercise: async (id, patch) => {
         await crud.updateExercise(id, patch);
@@ -136,6 +143,10 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => {
 
     updateDay: async (id: string, patch: Partial<WorkoutDay>) => {
         await crud.updateDay(id, patch);
+    },
+
+    queueCreateExercise: async ({ catalogId, nameDisplay, position }) => {
+      await crud.addExercise(catalogId, nameDisplay, get, position)
     },
 
     sync: () => sync(get, set),

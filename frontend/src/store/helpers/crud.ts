@@ -1,76 +1,80 @@
-import { getDb } from '@/db/service';
-import { WorkoutDay, Exercise } from '@/db/schema';
-import type { Set } from '@/db/schema';
-import { v4 as uuidv4 } from 'uuid';
-import { WorkoutState } from '../useWorkoutStore';
+import { getDb } from '@/db/service'
+import { WorkoutDay, Exercise } from '@/db/schema'
+import type { Set } from '@/db/schema'
+import { v4 as uuidv4 } from 'uuid'
+import { WorkoutState } from '../useWorkoutStore'
 
-export const addExercise = async (catalogId: string, name: string, get: () => WorkoutState): Promise<string> => {
-  const { userId, selectedDate, exercises, activeDay } = get();
-  if (!userId) return '';
+export const addExercise = async (
+  catalogId: string,
+  name: string,
+  get: () => WorkoutState,
+  positionOverride?: number
+): Promise<string> => {
+  const { userId, selectedDate, exercises, activeDay } = get()
+  if (!userId) return ''
 
-  const db = await getDb();
-  let dayDoc = activeDay;
+  const db = await getDb()
+  let dayDoc = activeDay
 
-  // Create day if it doesn't exist
   if (!dayDoc) {
     const newDay: WorkoutDay = {
       id: uuidv4(),
       serverId: null,
-      userId: userId,
+      userId,
       workoutDate: selectedDate,
       isRestDay: false,
-      isSynced: false, // Mark as not synced
+      isSynced: false,
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    dayDoc = await db.workout_days.insert(newDay);
+      updatedAt: new Date().toISOString()
+    }
+    dayDoc = await db.workout_days.insert(newDay)
   }
+
+  const position = typeof positionOverride === 'number' ? positionOverride : exercises.length
 
   const newExercise: Exercise = {
     id: uuidv4(),
     serverId: null,
     dayId: dayDoc.id,
-    catalogId: catalogId,
-    name: name,
-    position: exercises.length,
-    isSynced: false, // Mark as not synced
+    catalogId,
+    name,
+    position,
+    isSynced: false,
     createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
-  await db.exercises.insert(newExercise);
-  return newExercise.id;
-};
+    updatedAt: new Date().toISOString()
+  }
+
+  await db.exercises.insert(newExercise)
+  return newExercise.id
+}
 
 export const updateExercise = async (id: string, patch: Partial<Exercise>) => {
-  const db = await getDb();
-  const doc = await db.exercises.findOne(id).exec();
-  if (doc) {
-    await doc.incrementalPatch({ ...patch, isSynced: false });
-  }
+  const db = await getDb()
+  await db.exercises.update(id, { ...patch, isSynced: false })
 };
 
 export const deleteExercise = async (id: string) => {
-  const db = await getDb();
-  const doc = await db.exercises.findOne(id).exec();
-  if (doc) {
-    // Track deletion for syncing if it has a serverId
-    if (doc.serverId) {
-      await db.deleted_documents.insert({
-        id: doc.id,
-        serverId: doc.serverId,
-        collectionName: 'exercises',
-        deletedAt: new Date().toISOString(),
-      });
-    }
-    await doc.remove();
+  const db = await getDb()
+  const doc = await db.exercises.findOne(id).exec()
+  if (!doc) return
+
+  if (doc.serverId) {
+    await db.deleted_documents.insert({
+      id: doc.id,
+      serverId: doc.serverId,
+      collectionName: 'exercises',
+      deletedAt: new Date().toISOString()
+    })
   }
+
+  await db.exercises.remove(id)
 };
 
 export const addSet = async (exerciseId: string, get: () => WorkoutState) => {
   const { userId, selectedDate, sets } = get();
   if (!userId) return;
 
-  const db = await getDb();
+  const db = await getDb()
   const exerciseSets = sets.filter(s => s.exerciseId === exerciseId);
 
   const newSet: Set = {
@@ -88,45 +92,33 @@ export const addSet = async (exerciseId: string, get: () => WorkoutState) => {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
-  await db.sets.insert(newSet);
+  await db.sets.insert(newSet)
 };
 
 export const updateSet = async (id: string, patch: Partial<Set>) => {
-  const db = await getDb();
-  const doc = await db.sets.findOne(id).exec();
-  if (doc) {
-    await doc.incrementalPatch({ ...patch, isSynced: false });
-  }
+  const db = await getDb()
+  await db.sets.update(id, { ...patch, isSynced: false })
 };
 
 export const deleteSet = async (id: string) => {
-  const db = await getDb();
-  const doc = await db.sets.findOne(id).exec();
-  if (doc) {
-    // Track deletion for syncing if it has a serverId
-    if (doc.serverId) {
-      await db.deleted_documents.insert({
-        id: doc.id,
-        serverId: doc.serverId,
-        collectionName: 'sets',
-        deletedAt: new Date().toISOString(),
-      });
-    }
+  const db = await getDb()
+  const doc = await db.sets.findOne(id).exec()
+  if (!doc) return
 
-    // Mark parent exercise as unsynced when a set is deleted
-    const exerciseDoc = await db.exercises.findOne(doc.exerciseId).exec();
-    if (exerciseDoc) {
-      await exerciseDoc.incrementalPatch({ isSynced: false });
-    }
-
-    await doc.remove();
+  if (doc.serverId) {
+    await db.deleted_documents.insert({
+      id: doc.id,
+      serverId: doc.serverId,
+      collectionName: 'sets',
+      deletedAt: new Date().toISOString()
+    })
   }
+
+  await db.exercises.update(doc.exerciseId, { isSynced: false })
+  await db.sets.remove(id)
 };
 
 export const updateDay = async (id: string, patch: Partial<WorkoutDay>) => {
-  const db = await getDb();
-  const doc = await db.workout_days.findOne(id).exec();
-  if (doc) {
-    await doc.incrementalPatch({ ...patch, isSynced: false });
-  }
+  const db = await getDb()
+  await db.workout_days.update(id, { ...patch, isSynced: false })
 };

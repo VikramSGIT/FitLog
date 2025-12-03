@@ -1,22 +1,22 @@
-const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+/// <reference types="vite/client" />
+
+const API_BASE = import.meta.env?.VITE_API_BASE_URL || ''
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  try {
-    const res = await fetch(`${API_BASE}${path}`, {
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json', ...(init?.headers || {}) },
-      ...init
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(text || `HTTP ${res.status}`);
-    }
-    if (res.status === 204) return undefined as unknown as T;
-    const data = await res.json() as Promise<T>;
-    return data;
-  } catch (error) {
-    throw error;
+  const headers = new Headers(init?.headers)
+  headers.set('Content-Type', 'application/json')
+  const res = await fetch(`${API_BASE}${path}`, {
+    credentials: 'include',
+    headers,
+    ...init
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(text || `HTTP ${res.status}`)
   }
+  if (res.status === 204) return undefined as unknown as T
+  const data = (await res.json()) as T
+  return data
 }
 
 export type WorkoutSet = {
@@ -134,6 +134,54 @@ export type SetHistory = {
   weightKg: number;
   isWarmup: boolean;
 };
+
+export type SaveOperation =
+  | { type: 'createDay'; localId: string; workoutDate: string; timezone?: string }
+  | { type: 'createExercise'; localId: string; dayId: string; catalogId: string; position: number; comment?: string }
+  | { type: 'createSet'; localId: string; exerciseId: string; position: number; reps: number; weightKg: number; isWarmup?: boolean }
+  | { type: 'createRest'; localId: string; exerciseId: string; position: number; durationSeconds: number }
+  | { type: 'updateExercise'; id: string; patch: Partial<{ position: number; comment: string }> }
+  | { type: 'updateSet'; id: string; patch: Partial<{ position: number; reps: number; weightKg: number; isWarmup: boolean }> }
+  | { type: 'updateRest'; id: string; patch: Partial<{ position: number; durationSeconds: number }> }
+  | { type: 'reorderExercises'; dayId: string; orderedIds: string[] }
+  | { type: 'reorderSets'; exerciseId: string; orderedIds: string[] }
+  | { type: 'deleteExercise'; id: string }
+  | { type: 'deleteSet'; id: string }
+  | { type: 'deleteRest'; id: string }
+  | { type: 'updateDay'; dayId: string; isRestDay: boolean }
+
+const postSaveOps = async (ops: SaveOperation[], idempotencyKey?: string, clientEpoch?: number) => {
+  const res = await fetch(`${API_BASE}/api/save`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      version: 'v1',
+      idempotencyKey,
+      clientEpoch: clientEpoch ?? Number(localStorage.getItem('saveEpoch') || '0'),
+      ops
+    })
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const code = data?.error?.code ?? ''
+    const serverEpoch = data?.serverEpoch
+    const err = new Error(code || `HTTP ${res.status}`)
+    ;(err as any).code = code
+    ;(err as any).serverEpoch = serverEpoch
+    throw err
+  }
+  return data as {
+    applied: boolean
+    mapping: {
+      exercises: { localId: string; id: string }[]
+      sets: { localId: string; id: string }[]
+      rests: { localId: string; id: string }[]
+    }
+    updatedAt: string
+    serverEpoch: number
+  }
+}
 
 export const api = {
   // Catalog search
@@ -297,60 +345,14 @@ export const api = {
     if (limit !== undefined) params.append('limit', limit.toString())
     if (offset !== undefined) params.append('offset', offset.toString())
     const query = params.toString()
-    return request<ExerciseStats>(`/api/catalog/entries/${id}/stats${query ? `?${query}` : ''}`)
+    const suffix = query ? `?${query}` : ''
+    return request<ExerciseStats>(`/api/catalog/entries/${id}/stats${suffix}`)
   },
 
   // Batch save
-  saveBatch: (
-    ops: Array<
-      | { type: 'createDay'; localId: string; workoutDate: string; timezone?: string }
-      | { type: 'createExercise'; localId: string; dayId: string; catalogId: string; position: number; comment?: string }
-      | { type: 'createSet'; localId: string; exerciseId: string; position: number; reps: number; weightKg: number; isWarmup?: boolean }
-      | { type: 'createRest'; localId: string; exerciseId: string; position: number; durationSeconds: number }
-      | { type: 'updateExercise'; exerciseId: string; patch: Partial<{ position: number; comment: string }> }
-      | { type: 'updateSet'; setId: string; patch: Partial<{ position: number; reps: number; weightKg: number; isWarmup: boolean }> }
-      | { type: 'updateRest'; restId: string; patch: Partial<{ position: number; durationSeconds: number }> }
-      | { type: 'reorderExercises'; dayId: string; orderedIds: string[] }
-      | { type: 'reorderSets'; exerciseId: string; orderedIds: string[] }
-      | { type: 'deleteExercise'; exerciseId: string }
-      | { type: 'deleteSet'; setId: string }
-      | { type: 'deleteRest'; restId: string }
-      | { type: 'updateDay'; dayId: string; isRestDay: boolean }
-    >,
-    idempotencyKey?: string,
-    clientEpoch?: number
-  ) =>
-    (async () => {
-      const res = await fetch(`${API_BASE}/api/save`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          version: 'v1',
-          idempotencyKey,
-          clientEpoch: clientEpoch ?? Number(localStorage.getItem('saveEpoch') || '0'),
-          ops
-        })
-      })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        const code = (data && data.error && data.error.code) || ''
-        const serverEpoch = data && data.serverEpoch
-        const err = new Error(code || `HTTP ${res.status}`)
-        ;(err as any).code = code
-        ;(err as any).serverEpoch = serverEpoch
-        throw err
-      }
-      return data as {
-        applied: boolean
-        mapping: {
-          exercises: { localId: string; id: string }[]
-          sets: { localId: string; id: string }[]
-          rests: { localId: string; id: string }[]
-        }
-        updatedAt: string
-        serverEpoch: number
-      }
-    })()
+  save: (ops: SaveOperation[], idempotencyKey?: string, clientEpoch?: number) =>
+    postSaveOps(ops, idempotencyKey, clientEpoch),
+  saveBatch: (ops: SaveOperation[], idempotencyKey?: string, clientEpoch?: number) =>
+    postSaveOps(ops, idempotencyKey, clientEpoch)
 };
 

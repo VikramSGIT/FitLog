@@ -1,6 +1,6 @@
 import { getDb } from '@/db/service';
 import { api } from '@/api/client';
-import { WorkoutDay, Exercise, Set, WorkoutDayDoc } from '@/db/schema';
+import { WorkoutDay, Exercise, Set } from '@/db/schema';
 import { WorkoutState } from '../useWorkoutStore';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -13,7 +13,7 @@ type DayWithExercises = {
   userId: string;
 };
 
-const computeDay = (activeDay: WorkoutDayDoc | null, exercises: Exercise[]): DayWithExercises | null => {
+const computeDay = (activeDay: WorkoutDay | null, exercises: Exercise[]): DayWithExercises | null => {
   if (!activeDay) return null;
   return {
     id: activeDay.id,
@@ -90,7 +90,7 @@ export const loadDay = async (date: string, get: () => WorkoutState, set: (state
             updatedAt: new Date().toISOString(),
             isSynced: true, // Data from server is considered synced
           };
-          const exerciseDoc = await db.exercises.insert(exerciseData);
+          await db.exercises.insert(exerciseData);
 
           if (ex.sets) {
             for (const s of ex.sets) {

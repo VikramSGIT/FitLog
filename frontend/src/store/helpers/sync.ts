@@ -81,52 +81,76 @@ export const sync = async (get: () => WorkoutState, set: (state: Partial<Workout
     
     // 2. Build the ordered 'ops' array
     const ops: SaveOperation[] = []
+    const dayRefCache = new Map<string, string>()
+
+    const getDayReference = async (dayId: string): Promise<string> => {
+      if (dayRefCache.has(dayId)) {
+        return dayRefCache.get(dayId)!
+      }
+      const dayDoc = await db.workout_days.findOne(dayId).exec()
+      if (!dayDoc) {
+        throw new Error(`Day not found for exercise ${dayId}`)
+      }
+      const ref = dayDoc.serverId ?? dayDoc.id
+      dayRefCache.set(dayId, ref)
+      return ref
+    }
 
     // Deletions first
     for (const doc of deletedDocs) {
-      if (doc.serverId) { // Only delete if it was ever synced
-        const type = doc.collectionName === 'exercises' ? 'deleteExercise' : 'deleteSet';
-        ops.push({ type, id: doc.serverId })
+      if (!doc.serverId) continue
+      if (doc.collectionName === 'exercises') {
+        ops.push({ type: 'deleteExercise', exerciseId: doc.serverId })
+      } else if (doc.collectionName === 'sets') {
+        ops.push({ type: 'deleteSet', setId: doc.serverId })
       }
     }
 
-    // Creations (ordered by dependency)
-    // Days
+    // Days (creations)
     for (const day of unsyncedDays) {
-      if (!day.serverId) { // It's a new day
-        ops.push({ type: 'createDay', localId: day.id, workoutDate: day.workoutDate, timezone: day.timezone || '' })
+      if (!day.serverId) {
+        ops.push({
+          type: 'createDay',
+          localId: day.id,
+          workoutDate: day.workoutDate,
+          timezone: day.timezone || ''
+        })
+        dayRefCache.set(day.id, day.id)
+      } else {
+        dayRefCache.set(day.id, day.serverId)
       }
     }
-    // Exercises
+
+    // Exercises (creations)
     for (const ex of unsyncedExercises) {
-      if (!ex.serverId) { // It's a new exercise
-        if (!ex.catalogId) continue
-        ops.push({
-          type: 'createExercise',
-          localId: ex.id,
-          dayId: `temp:${ex.dayId}`,
-          catalogId: ex.catalogId,
-          position: ex.position,
-          comment: ex.comment
-        })
-      }
+      if (ex.serverId) continue
+      if (!ex.catalogId) continue
+      const dayRef = await getDayReference(ex.dayId)
+      ops.push({
+        type: 'createExercise',
+        localId: ex.id,
+        dayId: dayRef,
+        catalogId: ex.catalogId,
+        position: ex.position,
+        comment: ex.comment ?? undefined
+      })
     }
-    // Sets
+
+    // Sets (creations)
     for (const set of unsyncedSets) {
-      if (!set.serverId) { // It's a new set
-        const parentEx = await db.exercises.findOne(set.exerciseId).exec()
-        // Parent exercise could be already on server or new in this batch
-        const exerciseIdRef = parentEx?.serverId ? parentEx.serverId : `temp:${set.exerciseId}`
-        ops.push({
-          type: 'createSet',
-          localId: set.id,
-          exerciseId: exerciseIdRef,
-          position: set.position,
-          reps: set.reps,
-          weightKg: set.weightKg,
-          isWarmup: set.isWarmup
-        })
-      }
+      if (set.serverId) continue
+      const parentEx = await db.exercises.findOne(set.exerciseId).exec()
+      const exerciseRef = parentEx?.serverId ?? parentEx?.id
+      if (!exerciseRef) continue
+      ops.push({
+        type: 'createSet',
+        localId: set.id,
+        exerciseId: exerciseRef,
+        position: set.position,
+        reps: set.reps,
+        weightKg: set.weightKg,
+        isWarmup: set.isWarmup
+      })
     }
 
     // Updates
@@ -134,17 +158,21 @@ export const sync = async (get: () => WorkoutState, set: (state: Partial<Workout
       if (day.serverId) {
         ops.push({ type: 'updateDay', dayId: day.serverId, isRestDay: day.isRestDay })
       }
-      }
+    }
     for (const ex of unsyncedExercises) {
       if (ex.serverId) {
-        ops.push({ type: 'updateExercise', id: ex.serverId, patch: { comment: ex.comment, position: ex.position } })
+        ops.push({
+          type: 'updateExercise',
+          exerciseId: ex.serverId,
+          patch: { comment: ex.comment ?? undefined, position: ex.position }
+        })
       }
     }
     for (const set of unsyncedSets) {
       if (set.serverId) {
         ops.push({
           type: 'updateSet',
-          id: set.serverId,
+          setId: set.serverId,
           patch: { reps: set.reps, weightKg: set.weightKg, isWarmup: set.isWarmup, position: set.position }
         })
       }
@@ -155,11 +183,14 @@ export const sync = async (get: () => WorkoutState, set: (state: Partial<Workout
       const res = await saveWithEpochRetry(ops)
 
       // 4. Process results and update local DB
-      const mapping = res.mapping
-      for (const item of mapping.exercises) {
+      const mapping = res.mapping ?? { exercises: [], sets: [], rests: [] }
+      const createdExercises = Array.isArray(mapping.exercises) ? mapping.exercises : []
+      const createdSets = Array.isArray(mapping.sets) ? mapping.sets : []
+
+      for (const item of createdExercises) {
         await db.exercises.update(item.localId, { serverId: item.id, isSynced: true })
       }
-      for (const item of mapping.sets) {
+      for (const item of createdSets) {
         await db.sets.update(item.localId, { serverId: item.id, isSynced: true })
       }
       

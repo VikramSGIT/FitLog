@@ -136,19 +136,19 @@ export type SetHistory = {
 };
 
 export type SaveOperation =
-  | { type: 'createDay'; localId: string; workoutDate: string; timezone?: string }
+  | { type: 'createDay'; localId: string; workoutDate: string; timezone: string }
+  | { type: 'updateDay'; dayId: string; isRestDay: boolean }
   | { type: 'createExercise'; localId: string; dayId: string; catalogId: string; position: number; comment?: string }
-  | { type: 'createSet'; localId: string; exerciseId: string; position: number; reps: number; weightKg: number; isWarmup?: boolean }
+  | { type: 'updateExercise'; exerciseId: string; patch: Partial<{ position: number; comment: string }> }
+  | { type: 'deleteExercise'; exerciseId: string }
+  | { type: 'createSet'; localId: string; exerciseId: string; position: number; reps: number; weightKg: number; isWarmup: boolean }
+  | { type: 'updateSet'; setId: string; patch: Partial<{ position: number; reps: number; weightKg: number; isWarmup: boolean }> }
+  | { type: 'deleteSet'; setId: string }
   | { type: 'createRest'; localId: string; exerciseId: string; position: number; durationSeconds: number }
-  | { type: 'updateExercise'; id: string; patch: Partial<{ position: number; comment: string }> }
-  | { type: 'updateSet'; id: string; patch: Partial<{ position: number; reps: number; weightKg: number; isWarmup: boolean }> }
-  | { type: 'updateRest'; id: string; patch: Partial<{ position: number; durationSeconds: number }> }
+  | { type: 'updateRest'; restId: string; patch: Partial<{ position: number; durationSeconds: number }> }
+  | { type: 'deleteRest'; restId: string }
   | { type: 'reorderExercises'; dayId: string; orderedIds: string[] }
   | { type: 'reorderSets'; exerciseId: string; orderedIds: string[] }
-  | { type: 'deleteExercise'; id: string }
-  | { type: 'deleteSet'; id: string }
-  | { type: 'deleteRest'; id: string }
-  | { type: 'updateDay'; dayId: string; isRestDay: boolean }
 
 const postSaveOps = async (ops: SaveOperation[], idempotencyKey?: string, clientEpoch?: number) => {
   const res = await fetch(`${API_BASE}/api/save`, {

@@ -1,6 +1,6 @@
 import { getDb } from '@/db/service'
 import { WorkoutDay, Exercise } from '@/db/schema'
-import type { Set } from '@/db/schema'
+import type { Set, Rest } from '@/db/schema'
 import { v4 as uuidv4 } from 'uuid'
 import { WorkoutState } from '../useWorkoutStore'
 
@@ -71,11 +71,14 @@ export const deleteExercise = async (id: string) => {
 };
 
 export const addSet = async (exerciseId: string, get: () => WorkoutState) => {
-  const { userId, selectedDate, sets } = get();
+  const { userId, selectedDate, sets, rests } = get();
   if (!userId) return;
 
   const db = await getDb()
   const exerciseSets = sets.filter(s => s.exerciseId === exerciseId);
+  const exerciseRests = rests.filter((rest) => rest.exerciseId === exerciseId)
+  const positions = [...exerciseSets, ...exerciseRests].map((item) => item.position)
+  const nextPosition = positions.length > 0 ? Math.max(...positions) + 1 : 0
 
   const newSet: Set = {
     id: uuidv4(),
@@ -83,7 +86,7 @@ export const addSet = async (exerciseId: string, get: () => WorkoutState) => {
     exerciseId: exerciseId,
     userId: userId,
     workoutDate: selectedDate,
-    position: exerciseSets.length,
+    position: nextPosition,
     reps: 1,
     weightKg: 0,
     isWarmup: false,
@@ -95,10 +98,37 @@ export const addSet = async (exerciseId: string, get: () => WorkoutState) => {
   await db.sets.insert(newSet)
 };
 
+export const addRest = async (exerciseId: string, get: () => WorkoutState, durationSeconds = 60) => {
+  const { rests, sets } = get()
+  const db = await getDb()
+  const exerciseRests = rests.filter((rest) => rest.exerciseId === exerciseId)
+  const exerciseSets = sets.filter((set) => set.exerciseId === exerciseId)
+  const positions = [...exerciseRests, ...exerciseSets].map((item) => item.position)
+  const nextPosition = positions.length > 0 ? Math.max(...positions) + 1 : 0
+
+  const newRest: Rest = {
+    id: uuidv4(),
+    serverId: null,
+    exerciseId,
+    position: nextPosition,
+    durationSeconds,
+    isSynced: false,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  }
+
+  await db.rest_periods.insert(newRest)
+}
+
 export const updateSet = async (id: string, patch: Partial<Set>) => {
   const db = await getDb()
   await db.sets.update(id, { ...patch, isSynced: false })
 };
+
+export const updateRest = async (id: string, patch: Partial<Rest>) => {
+  const db = await getDb()
+  await db.rest_periods.update(id, { ...patch, isSynced: false })
+}
 
 export const deleteSet = async (id: string) => {
   const db = await getDb()
@@ -117,6 +147,23 @@ export const deleteSet = async (id: string) => {
   await db.exercises.update(doc.exerciseId, { isSynced: false })
   await db.sets.remove(id)
 };
+
+export const deleteRest = async (id: string) => {
+  const db = await getDb()
+  const doc = await db.rest_periods.findOne(id).exec()
+  if (!doc) return
+
+  if (doc.serverId) {
+    await db.deleted_documents.insert({
+      id: doc.id,
+      serverId: doc.serverId,
+      collectionName: 'rests',
+      deletedAt: new Date().toISOString()
+    })
+  }
+
+  await db.rest_periods.remove(id)
+}
 
 export const updateDay = async (id: string, patch: Partial<WorkoutDay>) => {
   const db = await getDb()

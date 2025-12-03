@@ -1,4 +1,4 @@
-import type { WorkoutDay, Exercise, Set, DeletedDocument } from './schema'
+import type { WorkoutDay, Exercise, Set, Rest, DeletedDocument } from './schema'
 
 export type SelectorCondition<T> =
   | T
@@ -48,6 +48,7 @@ export interface Db {
   workout_days: DbCollection<WorkoutDay>
   exercises: DbCollection<Exercise>
   sets: DbCollection<Set>
+  rest_periods: DbCollection<Rest>
   deleted_documents: DbCollection<DeletedDocument>
 }
 

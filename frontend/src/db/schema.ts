@@ -44,6 +44,17 @@ export type Set = {
   updatedAt: string
 }
 
+export type Rest = {
+  id: string
+  serverId: string | null
+  isSynced: boolean
+  exerciseId: string
+  position: number
+  durationSeconds: number
+  createdAt: string
+  updatedAt: string
+}
+
 export type DeletedDocument = {
   id: string
   serverId: string | null

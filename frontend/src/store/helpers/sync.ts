@@ -78,6 +78,7 @@ export const sync = async (get: () => WorkoutState, set: (state: Partial<Workout
     const unsyncedDays = await db.workout_days.find({ selector: { isSynced: false } }).exec()
     const unsyncedExercises = await db.exercises.find({ selector: { isSynced: false } }).exec()
     const unsyncedSets = await db.sets.find({ selector: { isSynced: false } }).exec()
+    const unsyncedRests = await db.rest_periods.find({ selector: { isSynced: false } }).exec()
     
     // 2. Build the ordered 'ops' array
     const ops: SaveOperation[] = []
@@ -103,6 +104,8 @@ export const sync = async (get: () => WorkoutState, set: (state: Partial<Workout
         ops.push({ type: 'deleteExercise', exerciseId: doc.serverId })
       } else if (doc.collectionName === 'sets') {
         ops.push({ type: 'deleteSet', setId: doc.serverId })
+      } else if (doc.collectionName === 'rests') {
+        ops.push({ type: 'deleteRest', restId: doc.serverId })
       }
     }
 
@@ -178,6 +181,27 @@ export const sync = async (get: () => WorkoutState, set: (state: Partial<Workout
       }
     }
 
+    for (const rest of unsyncedRests) {
+      if (!rest.serverId) {
+        const parentEx = await db.exercises.findOne(rest.exerciseId).exec()
+        const exerciseRef = parentEx?.serverId ?? parentEx?.id
+        if (!exerciseRef) continue
+        ops.push({
+          type: 'createRest',
+          localId: rest.id,
+          exerciseId: exerciseRef,
+          position: rest.position,
+          durationSeconds: rest.durationSeconds
+        })
+      } else {
+        ops.push({
+          type: 'updateRest',
+          restId: rest.serverId,
+          patch: { position: rest.position, durationSeconds: rest.durationSeconds }
+        })
+      }
+    }
+
     // 3. Send to server if there are operations
     if (ops.length > 0) {
       const res = await saveWithEpochRetry(ops)
@@ -186,12 +210,16 @@ export const sync = async (get: () => WorkoutState, set: (state: Partial<Workout
       const mapping = res.mapping ?? { exercises: [], sets: [], rests: [] }
       const createdExercises = Array.isArray(mapping.exercises) ? mapping.exercises : []
       const createdSets = Array.isArray(mapping.sets) ? mapping.sets : []
+      const createdRests = Array.isArray(mapping.rests) ? mapping.rests : []
 
       for (const item of createdExercises) {
         await db.exercises.update(item.localId, { serverId: item.id, isSynced: true })
       }
       for (const item of createdSets) {
         await db.sets.update(item.localId, { serverId: item.id, isSynced: true })
+      }
+      for (const item of createdRests) {
+        await db.rest_periods.update(item.localId, { serverId: item.id, isSynced: true })
       }
       
       // Mark updated items as synced
@@ -203,6 +231,9 @@ export const sync = async (get: () => WorkoutState, set: (state: Partial<Workout
       
       const setDocsToSync = unsyncedSets.filter(s => s.serverId).map(s => ({ ...s, isSynced: true }))
       if (setDocsToSync.length > 0) await db.sets.bulkUpsert(setDocsToSync)
+
+      const restDocsToSync = unsyncedRests.filter(r => r.serverId).map(r => ({ ...r, isSynced: true }))
+      if (restDocsToSync.length > 0) await db.rest_periods.bulkUpsert(restDocsToSync)
 
       // Clear synced deletions
       await db.deleted_documents.bulkRemove(deletedDocs.map(d => d.id))

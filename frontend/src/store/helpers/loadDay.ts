@@ -1,6 +1,6 @@
 import { getDb } from '@/db/service';
 import { api } from '@/api/client';
-import { WorkoutDay, Exercise, Set } from '@/db/schema';
+import { WorkoutDay, Exercise, Set, Rest } from '@/db/schema';
 import { WorkoutState } from '../useWorkoutStore';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -26,12 +26,13 @@ const computeDay = (activeDay: WorkoutDay | null, exercises: Exercise[]): DayWit
 };
 
 export const loadDay = async (date: string, get: () => WorkoutState, set: (state: Partial<WorkoutState>) => void) => {
-  const { userId, daySub, exercisesSub, setsSub } = get();
+  const { userId, daySub, exercisesSub, setsSub, restsSub } = get();
   if (!userId) return;
 
   daySub?.unsubscribe();
   exercisesSub?.unsubscribe();
   setsSub?.unsubscribe();
+  restsSub?.unsubscribe();
 
   set({
     isLoading: true,
@@ -40,6 +41,7 @@ export const loadDay = async (date: string, get: () => WorkoutState, set: (state
     activeDay: null,
     exercises: [],
     sets: [],
+    rests: [],
     day: null
   });
 
@@ -116,6 +118,22 @@ export const loadDay = async (date: string, get: () => WorkoutState, set: (state
               await db.sets.insert(setData);
             }
           }
+
+          if (ex.restPeriods) {
+            for (const r of ex.restPeriods) {
+              const restData: Rest = {
+                id: uuidv4(),
+                serverId: r.id,
+                exerciseId: newLocalExerciseId,
+                position: r.position ?? 0,
+                durationSeconds: r.durationSeconds,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+                isSynced: true
+              }
+              await db.rest_periods.insert(restData)
+            }
+          }
         }
       }
     } catch (error) {
@@ -133,7 +151,7 @@ export const loadDay = async (date: string, get: () => WorkoutState, set: (state
     })
     .$.subscribe(async (dayDoc) => {
       if (!dayDoc) {
-        set({ activeDay: null, exercises: [], sets: [], day: null, dayLoading: false });
+        set({ activeDay: null, exercises: [], sets: [], rests: [], day: null, dayLoading: false });
         return;
       }
 
@@ -152,8 +170,9 @@ export const loadDay = async (date: string, get: () => WorkoutState, set: (state
           const { activeDay } = get();
           set({ exercises: sortedExercises, day: computeDay(activeDay, sortedExercises) });
 
-          const { setsSub: prevSetsSub } = get();
+          const { setsSub: prevSetsSub, restsSub: prevRestsSub } = get();
           prevSetsSub?.unsubscribe();
+          prevRestsSub?.unsubscribe();
 
           // Step 5: Subscribe to sets for these exercises
           const exerciseIds = sortedExercises.map(ex => ex.id).filter(Boolean) as string[];
@@ -171,6 +190,29 @@ export const loadDay = async (date: string, get: () => WorkoutState, set: (state
             set({ setsSub: newSetsSub });
           } else {
             set({ sets: [], setsSub: null });
+          }
+
+          if (exerciseIds.length > 0) {
+            const orderMap = new Map<string, number>()
+            exerciseIds.forEach((id, index) => orderMap.set(id, index))
+            const newRestsSub = db.rest_periods
+              .find({
+                selector: {
+                  exerciseId: { $in: exerciseIds }
+                }
+              })
+              .$.subscribe((rests) => {
+                const sortedRests = [...rests].sort((a, b) => {
+                  const aOrder = orderMap.get(a.exerciseId) ?? Number.MAX_SAFE_INTEGER
+                  const bOrder = orderMap.get(b.exerciseId) ?? Number.MAX_SAFE_INTEGER
+                  if (aOrder !== bOrder) return aOrder - bOrder
+                  return a.position - b.position
+                })
+                set({ rests: sortedRests })
+              })
+            set({ restsSub: newRestsSub })
+          } else {
+            set({ rests: [], restsSub: null })
           }
         });
 

@@ -16,7 +16,7 @@ const DEFAULT_REST_DURATION_SECONDS = 90
 
 export default function ExerciseItem({ exercise }: { exercise: Exercise }) {
   const navigate = useNavigate()
-  const { updateExercise, deleteExercise, addSet, activeDay, isLoading: dayLoading, sets } = useWorkoutStore()
+  const { updateExercise, deleteExercise, addSet, addRest, activeDay, isLoading: dayLoading, sets } = useWorkoutStore()
   const isRestDay = activeDay?.isRestDay ?? false
   const [comment, setComment] = useState(exercise.comment || '')
   const [showNote, setShowNote] = useState<boolean>(() => (exercise.comment || '').trim().length > 0)
@@ -55,13 +55,9 @@ export default function ExerciseItem({ exercise }: { exercise: Exercise }) {
     addSet(exercise.id)
   }
 
-  // addRest is not implemented in the new store yet
-  async function addRest() {
-    // if (dayLoading) return
-    // useWorkoutStore.getState().queueCreateRest(exercise.id, {
-    //   position: nextRestPosition,
-    //   durationSeconds: DEFAULT_REST_DURATION_SECONDS
-    // })
+  const handleAddRest = () => {
+    if (dayLoading) return
+    addRest(exercise.id)
   }
 
   return (
@@ -206,7 +202,7 @@ export default function ExerciseItem({ exercise }: { exercise: Exercise }) {
 
             <Group justify="space-between" align="center" wrap="wrap" gap="sm">
               <Title order={5}>Sets & Rest</Title>
-              <Group gap="sm">
+          <Group gap="sm">
                 <Button
                   onClick={handleAddSet}
                   disabled={isRestDay || dayLoading}
@@ -219,6 +215,14 @@ export default function ExerciseItem({ exercise }: { exercise: Exercise }) {
                 >
                   Add Set
                 </Button>
+            <Button
+              variant="light"
+              onClick={handleAddRest}
+              disabled={isRestDay || dayLoading}
+              leftSection={<IconMoonStars size={16} />}
+            >
+              Add Rest
+            </Button>
               </Group>
             </Group>
 

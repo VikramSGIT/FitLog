@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { api, ExerciseEntry, RestPeriod, WorkoutSet } from '@/api/client'
-import { Exercise, Set } from '@/db/schema'
+import { Exercise, Set, Rest } from '@/db/schema'
 import { useWorkoutStore } from '@/store/useWorkoutStore'
-import { ActionIcon, Group, Paper, Stack, Text, TextInput, Tooltip, useMantineTheme } from '@mantine/core'
+import { ActionIcon, Group, Paper, Stack, Text, TextInput, Tooltip, useMantineTheme, Divider } from '@mantine/core'
 import { IconTrash } from '@tabler/icons-react'
 import { DEFAULT_SURFACES, ThemeSurfaces } from '@/theme'
 import { useDebouncedSaveToRxDB } from '@/hooks/useDebouncedSaveToRxDB'
@@ -151,11 +151,99 @@ function SetRow({ set, multiplier, baseWeightKg }: { set: Set; multiplier?: numb
   )
 }
 
+function RestRow({ rest }: { rest: Rest }) {
+  const { updateRest, deleteRest, isLoading: dayLoading } = useWorkoutStore()
+  const [durationInput, setDurationInput] = useState<string>(() => String(rest.durationSeconds))
+  const theme = useMantineTheme()
+  const surfaces = (theme.other?.surfaces as ThemeSurfaces) ?? DEFAULT_SURFACES
+
+  useEffect(() => {
+    setDurationInput(String(rest.durationSeconds))
+  }, [rest.durationSeconds])
+
+  const parsedDuration = useMemo(() => {
+    const value = durationInput.trim() === '' ? null : Number(durationInput)
+    if (value === null || Number.isNaN(value) || value < 0) {
+      return null
+    }
+    return Math.round(value)
+  }, [durationInput])
+
+  const save = useCallback(
+    async (value: number | null) => {
+      if (value === null) return false
+      const current = useWorkoutStore.getState().rests.find((r) => r.id === rest.id)
+      if (!current) return false
+      if (current.durationSeconds === value) return false
+      await updateRest(rest.id, { durationSeconds: value })
+      return true
+    },
+    [rest.id, updateRest]
+  )
+
+  useDebouncedSaveToRxDB(parsedDuration, async (value) => save(value))
+
+  const onDelete = useCallback(async () => {
+    if (dayLoading) return
+    deleteRest(rest.id)
+  }, [dayLoading, deleteRest, rest.id])
+
+  return (
+    <Paper withBorder radius="md" p={0} style={{ borderColor: surfaces.border, backdropFilter: 'none' }}>
+      <Group justify="space-between" align="center" wrap="nowrap" gap="sm" px={theme.spacing.sm} py="xs">
+        <Group gap="sm" align="center" wrap="nowrap" style={{ flex: 1, minWidth: 0 }}>
+          <Text fw={600} size="sm">
+            Rest
+          </Text>
+          <TextInput
+            type="number"
+            value={durationInput}
+            min={0}
+            step={5}
+            disabled={dayLoading}
+            onChange={(e) => setDurationInput(e.currentTarget.value)}
+            size="sm"
+            radius="md"
+            variant="filled"
+            placeholder="Duration (s)"
+            style={{ width: 140 }}
+            rightSection={<Text size="xs">sec</Text>}
+          />
+        </Group>
+        <Tooltip label="Remove rest" position="top" withArrow>
+          <ActionIcon
+            variant="light"
+            color="red"
+            radius="md"
+            size="lg"
+            onClick={onDelete}
+            aria-label="Delete rest"
+            disabled={dayLoading}
+          >
+            <IconTrash size={18} />
+          </ActionIcon>
+        </Tooltip>
+      </Group>
+    </Paper>
+  )
+}
+
 export default function SetList({ exercise }: { exercise: Exercise }) {
   const allSets = useWorkoutStore((s) => s.sets)
-  const sets = useMemo(() => {
-    return allSets.filter(s => s.exerciseId === exercise.id).sort((a,b) => a.position - b.position)
-  }, [allSets, exercise.id])
+  const allRests = useWorkoutStore((s) => s.rests)
+  const entries = useMemo(() => {
+    const setEntries = allSets
+      .filter((s) => s.exerciseId === exercise.id)
+      .map((set) => ({ type: 'set' as const, position: set.position, set }))
+    const restEntries = allRests
+      .filter((r) => r.exerciseId === exercise.id)
+      .map((rest) => ({ type: 'rest' as const, position: rest.position, rest }))
+    return [...setEntries, ...restEntries].sort((a, b) => {
+      if (a.position !== b.position) return a.position - b.position
+      if (a.type === b.type) return 0
+      return a.type === 'set' ? -1 : 1
+    })
+  }, [allSets, allRests, exercise.id])
 
   const [catalogScaling, setCatalogScaling] = useState<{ multiplier: number; baseWeightKg: number } | null>(null)
 
@@ -188,14 +276,18 @@ export default function SetList({ exercise }: { exercise: Exercise }) {
 
   return (
     <Stack gap="xs" mt="xs">
-      {sets.map((set) => (
-        <SetRow
-          key={set.id}
-          set={set}
-          multiplier={effectiveMultiplier}
-          baseWeightKg={effectiveBaseWeight}
-        />
-      ))}
+      {entries.map((entry) =>
+        entry.type === 'set' ? (
+          <SetRow
+            key={`set-${entry.set.id}`}
+            set={entry.set}
+            multiplier={effectiveMultiplier}
+            baseWeightKg={effectiveBaseWeight}
+          />
+        ) : (
+          <RestRow key={`rest-${entry.rest.id}`} rest={entry.rest} />
+        )
+      )}
     </Stack>
   )
 }

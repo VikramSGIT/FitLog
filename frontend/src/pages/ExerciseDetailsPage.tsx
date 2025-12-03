@@ -38,6 +38,7 @@ export default function ExerciseDetailsPage() {
   const setDayLoading = useWorkoutStore((s) => s.setDayLoading)
   const day = useWorkoutStore((s) => s.day)
   const opLog = useWorkoutStore((s) => s.opLog)
+  const rests = useWorkoutStore((s) => s.rests)
 
   const [loading, setLoading] = useState(true)
   const [exercise, setExercise] = useState<CatalogRecord | null>(null)
@@ -58,7 +59,7 @@ export default function ExerciseDetailsPage() {
   // Check if there are unsaved changes for the current day and this catalog ID
   const hasUnsavedChanges = useMemo(() => {
     if (!day || !id || opLog.length === 0) return false
-    
+
     // Check if opLog contains operations for exercises matching this catalog ID
     const dayId = day.id
     const hasRelevantOps = opLog.some((op) => {
@@ -75,24 +76,40 @@ export default function ExerciseDetailsPage() {
       }
       if (op.type === 'deleteSet' || op.type === 'updateSet') {
         // For deleteSet and updateSet, we need to find the set's exercise
-        const setId = op.id?.replace('temp:', '') || op.id
+        const setId = op.setId?.replace('temp:', '') || op.setId
         const exercise = (day.exercises || []).find((ex) => {
           return ex.sets?.some((set) => set.id === setId || set.id === `temp-${setId}` || setId === `temp-${set.id}`)
         })
         return exercise?.catalogId === id
       }
       if (op.type === 'updateExercise' || op.type === 'deleteExercise') {
-        const exerciseId = op.id?.replace('temp:', '') || op.id
+        const exerciseId = op.exerciseId?.replace('temp:', '') || op.exerciseId
         const exercise = (day.exercises || []).find((ex) => {
           return ex.id === exerciseId || ex.id === `temp-${exerciseId}` || exerciseId === `temp-${ex.id}`
         })
+        return exercise?.catalogId === id
+      }
+      if (op.type === 'createRest') {
+        const exerciseId = op.exerciseId?.replace('temp:', '') || op.exerciseId
+        const exercise = (day.exercises || []).find((ex) => {
+          return ex.id === exerciseId || ex.id === `temp-${exerciseId}` || exerciseId === `temp-${ex.id}`
+        })
+        return exercise?.catalogId === id
+      }
+      if (op.type === 'updateRest' || op.type === 'deleteRest') {
+        const restId = op.restId?.replace('temp:', '') || op.restId
+        const restEntry =
+          rests.find((rest) => rest.id === restId || rest.serverId === restId) ??
+          rests.find((rest) => `temp-${rest.id}` === restId)
+        if (!restEntry) return false
+        const exercise = (day.exercises || []).find((ex) => ex.id === restEntry.exerciseId)
         return exercise?.catalogId === id
       }
       return false
     })
     
     return hasRelevantOps
-  }, [day, id, opLog])
+  }, [day, id, opLog, rests])
 
   // Get the current day's date string
   const currentDayDateStr = useMemo(() => {

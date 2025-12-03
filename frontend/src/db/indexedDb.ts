@@ -1,12 +1,12 @@
 import { v4 as uuidv4 } from 'uuid'
 
 import type { Db, DbCollection, DbQueryMany, DbQueryOne, FindQuery, Observable, Selector, Subscription } from './types'
-import type { WorkoutDay, Exercise, Set as WorkoutSet, DeletedDocument } from './schema'
+import type { WorkoutDay, Exercise, Set as WorkoutSet, Rest, DeletedDocument } from './schema'
 
 const DB_NAME = 'fitlogdb'
-const DB_VERSION = 1
+const DB_VERSION = 2
 
-type StoreName = 'workout_days' | 'exercises' | 'sets' | 'deleted_documents'
+type StoreName = 'workout_days' | 'exercises' | 'sets' | 'rest_periods' | 'deleted_documents'
 
 type CollectionConfig<T> = {
   name: StoreName
@@ -25,6 +25,10 @@ const STORE_CONFIGS: Record<StoreName, CollectionConfig<any>> = {
   sets: {
     name: 'sets',
     preprocess: (doc, previous) => prepareTrackedDoc('sets', doc, previous)
+  },
+  rest_periods: {
+    name: 'rest_periods',
+    preprocess: (doc, previous) => prepareTrackedDoc('rest_periods', doc, previous)
   },
   deleted_documents: {
     name: 'deleted_documents',
@@ -68,6 +72,13 @@ const openDatabase = (): Promise<IDBDatabase> =>
         const store = db.createObjectStore('sets', { keyPath: 'id' })
         store.createIndex('exerciseId', 'exerciseId', { unique: false })
         store.createIndex('workoutDate', 'workoutDate', { unique: false })
+        store.createIndex('isSynced', 'isSynced', { unique: false })
+      }
+
+      if (!db.objectStoreNames.contains('rest_periods')) {
+        const store = db.createObjectStore('rest_periods', { keyPath: 'id' })
+        store.createIndex('exerciseId', 'exerciseId', { unique: false })
+        store.createIndex('position', 'position', { unique: false })
         store.createIndex('isSynced', 'isSynced', { unique: false })
       }
 
@@ -318,12 +329,14 @@ class IndexedDb implements Db {
   workout_days: DbCollection<WorkoutDay>
   exercises: DbCollection<Exercise>
   sets: DbCollection<WorkoutSet>
+  rest_periods: DbCollection<Rest>
   deleted_documents: DbCollection<DeletedDocument>
 
   constructor(dbPromise: Promise<IDBDatabase>) {
     this.workout_days = new IndexedDbCollection<WorkoutDay>(dbPromise, STORE_CONFIGS.workout_days)
     this.exercises = new IndexedDbCollection<Exercise>(dbPromise, STORE_CONFIGS.exercises)
     this.sets = new IndexedDbCollection<WorkoutSet>(dbPromise, STORE_CONFIGS.sets)
+    this.rest_periods = new IndexedDbCollection<Rest>(dbPromise, STORE_CONFIGS.rest_periods)
     this.deleted_documents = new IndexedDbCollection<DeletedDocument>(dbPromise, STORE_CONFIGS.deleted_documents)
   }
 }

@@ -3,3 +3,4 @@
 /backend/out
 .idea
 .cursor
+esbuild-dist

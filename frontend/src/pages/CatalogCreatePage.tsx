@@ -17,7 +17,7 @@ import {
   Title,
   useMantineTheme
 } from '@mantine/core'
-import { IconArrowLeft, IconCirclePlus, IconDeviceFloppy, IconPhoto, IconTrash, IconX } from '@tabler/icons-react'
+import { IconArrowLeft, IconCirclePlus, IconDeviceFloppy, IconPhoto, IconTrash, IconX } from '@/icons/tabler'
 import { useNavigate, useParams } from 'react-router-dom'
 import { notifications } from '@mantine/notifications'
 import HeaderBar from '@/components/HeaderBar'

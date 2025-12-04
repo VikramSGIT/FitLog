@@ -13,7 +13,7 @@ import {
   IconCalendar,
   IconSunHigh,
   IconMoonStars
-} from '@tabler/icons-react'
+} from '@/icons/tabler'
 import { useMediaQuery } from '@mantine/hooks'
 import { useThemePreset } from '@/theme'
 import { useWorkoutStore } from '@/store/useWorkoutStore'

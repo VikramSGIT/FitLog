@@ -15,7 +15,7 @@ import {
   Title,
   useMantineTheme
 } from '@mantine/core'
-import { IconArrowLeft } from '@tabler/icons-react'
+import { IconArrowLeft } from '@/icons/tabler'
 import { notifications } from '@mantine/notifications'
 import HeaderBar from '@/components/HeaderBar'
 import { DEFAULT_SURFACES, ThemeSurfaces, useThemePreset } from '@/theme'

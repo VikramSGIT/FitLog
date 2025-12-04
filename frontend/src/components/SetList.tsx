@@ -3,7 +3,7 @@ import { api } from '@/api/client'
 import { Exercise, Set, Rest } from '@/db/schema'
 import { useWorkoutStore } from '@/store/useWorkoutStore'
 import { ActionIcon, Group, Paper, Stack, Text, TextInput, Tooltip, useMantineTheme } from '@mantine/core'
-import { IconTrash } from '@tabler/icons-react'
+import { IconTrash } from '@/icons/tabler'
 import { DEFAULT_SURFACES, ThemeSurfaces } from '@/theme'
 
 const LOCAL_DB_COMMIT_DELAY_MS = 2000

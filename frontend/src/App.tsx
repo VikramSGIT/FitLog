@@ -3,7 +3,16 @@ import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-route
 import { ActionIcon, AppShell, Button, Center, Container, Group, Loader, Menu, Modal, Paper, PasswordInput, Stack, Text, TextInput, Title, Tooltip, useMantineTheme } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
-import { IconLogout, IconLogin, IconBook2, IconMail, IconLock, IconSparkles, IconPalette, IconCheck } from '@tabler/icons-react'
+import {
+  IconLogout,
+  IconLogin,
+  IconBook2,
+  IconMail,
+  IconLock,
+  IconSparkles,
+  IconPalette,
+  IconCheck
+} from '@/icons/tabler'
 import { motion } from 'framer-motion'
 import { useWorkoutStore } from '@/store/useWorkoutStore'
 import { api, DayWithDetails } from '@/api/client'

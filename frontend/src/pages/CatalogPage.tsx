@@ -6,7 +6,7 @@ import { DEFAULT_SURFACES, ThemeSurfaces } from '@/theme'
 import HeaderBar from '@/components/HeaderBar'
 import { useWorkoutStore } from '@/store/useWorkoutStore'
 import { api } from '@/api/client'
-import { IconArrowLeft, IconCirclePlus, IconPlus } from '@tabler/icons-react'
+import { IconArrowLeft, IconCirclePlus, IconPlus } from '@/icons/tabler'
 import { useMediaQuery } from '@mantine/hooks'
 
 export default function CatalogPage() {

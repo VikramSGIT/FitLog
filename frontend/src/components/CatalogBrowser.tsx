@@ -29,7 +29,7 @@ import {
   IconAdjustments,
   IconArrowLeft,
   IconPencil
-} from '@tabler/icons-react'
+} from '@/icons/tabler'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useMediaQuery } from '@mantine/hooks'
 import { DEFAULT_SURFACES, ThemeSurfaces } from '@/theme'
@@ -441,7 +441,7 @@ export default function CatalogBrowser({ embedded = false, onClose, headerAddon 
                   <IconX
                     size={12}
                     style={{ cursor: 'pointer' }}
-                    onClick={(e) => {
+                    onClick={(e: React.MouseEvent<SVGSVGElement>) => {
                       e.stopPropagation()
                       setQ('')
                       setPage(1)
@@ -467,7 +467,7 @@ export default function CatalogBrowser({ embedded = false, onClose, headerAddon 
                   <IconX
                     size={12}
                     style={{ cursor: 'pointer' }}
-                    onClick={(e) => {
+                    onClick={(e: React.MouseEvent<SVGSVGElement>) => {
                       e.stopPropagation()
                       setType('')
                       setPage(1)
@@ -487,7 +487,7 @@ export default function CatalogBrowser({ embedded = false, onClose, headerAddon 
                   <IconX
                     size={12}
                     style={{ cursor: 'pointer' }}
-                    onClick={(e) => {
+                    onClick={(e: React.MouseEvent<SVGSVGElement>) => {
                       e.stopPropagation()
                       setBodyPart('')
                       setPage(1)
@@ -507,7 +507,7 @@ export default function CatalogBrowser({ embedded = false, onClose, headerAddon 
                   <IconX
                     size={12}
                     style={{ cursor: 'pointer' }}
-                    onClick={(e) => {
+                    onClick={(e: React.MouseEvent<SVGSVGElement>) => {
                       e.stopPropagation()
                       setEquipment('')
                       setPage(1)
@@ -527,7 +527,7 @@ export default function CatalogBrowser({ embedded = false, onClose, headerAddon 
                   <IconX
                     size={12}
                     style={{ cursor: 'pointer' }}
-                    onClick={(e) => {
+                    onClick={(e: React.MouseEvent<SVGSVGElement>) => {
                       e.stopPropagation()
                       setLevel('')
                       setPage(1)
@@ -547,7 +547,7 @@ export default function CatalogBrowser({ embedded = false, onClose, headerAddon 
                   <IconX
                     size={12}
                     style={{ cursor: 'pointer' }}
-                    onClick={(e) => {
+                    onClick={(e: React.MouseEvent<SVGSVGElement>) => {
                       e.stopPropagation()
                       setMuscle('')
                       setPage(1)

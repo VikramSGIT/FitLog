@@ -127,12 +127,15 @@ function Root() {
     setPresetId(exists ? id : themePresets[0].id)
   }
 
+  const providerColorScheme: 'light' | 'dark' | undefined =
+    preset.colorScheme === 'auto' ? undefined : preset.colorScheme === 'dark' ? 'dark' : 'light'
+
   return (
     <ThemePresetContext.Provider value={{ preset, selectPreset, presets: themePresets }}>
       <MantineProvider
         theme={theme}
-        defaultColorScheme={preset.colorScheme}
-        forceColorScheme={preset.colorScheme}
+        defaultColorScheme={providerColorScheme}
+        forceColorScheme={providerColorScheme}
       >
         <Global
           styles={{

@@ -235,7 +235,7 @@ export default function HeaderBar({
     // or if there's an active notification to update (meaning a save was in progress)
     const savedByFlag = saving === 'saved'
     const wasSaving = prevSavingRef.current === 'saving'
-    const savedByTimestamp = !!lastSavedAt && lastSavedAt !== prevLastSavedAtRef.current && saving !== 'saving' && wasSaving
+    const savedByTimestamp = !!lastSavedAt && lastSavedAt !== prevLastSavedAtRef.current && wasSaving
     if (savedByFlag || (savedByTimestamp && saveNotifIdRef.current)) {
       const title = 'Saved'
       const message = 'Your changes were saved successfully.'
@@ -278,14 +278,10 @@ export default function HeaderBar({
     prevSavingRef.current = saving
   }, [saving, lastSavedAt])
 
-  const onChangePicker = async (value: Date | null) => {
+  const onChangePicker = async (value: string | null) => {
     if (!value) return
-    const formatted = format(value, 'yyyy-MM-dd')
-    setSelectedDate(formatted)
-    const { userId } = useWorkoutStore.getState()
-    if (userId) {
-      await loadDay(formatted, userId)
-    }
+    setSelectedDate(value)
+    await loadDay(value)
   }
 
   const toggleRestDay = async () => {

@@ -63,7 +63,7 @@ export type WorkoutState = {
 
   // Actions
   init: (userId: string) => void;
-  loadDay: (date: string, userId: string) => Promise<void>;
+  loadDay: (date: string) => Promise<void>;
   addExercise: (catalogId: string, name: string, position?: number) => Promise<string>;
   updateExercise: (id: string, patch: Partial<Exercise>) => Promise<void>;
   deleteExercise: (id: string) => Promise<void>;
@@ -128,7 +128,7 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => {
         // Failed to subscribe to deleted documents
       });
 
-      get().loadDay(get().selectedDate, userId).catch(() => {
+      get().loadDay(get().selectedDate).catch(() => {
         // Error handled silently
       });
 
@@ -137,7 +137,7 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => {
       })
     },
 
-    loadDay: (date: string, userId: string) => {
+    loadDay: (date: string) => {
       return loadDay(date, get, set);
     },
     

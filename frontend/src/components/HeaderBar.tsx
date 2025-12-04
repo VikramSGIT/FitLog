@@ -1,6 +1,19 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Box, Button, Group, Menu, Stack, Text, Title, useMantineTheme, ActionIcon, Drawer, Divider, Modal } from '@mantine/core'
-import { DateInput } from '@mantine/dates'
+import {
+  Box,
+  Button,
+  Group,
+  Menu,
+  Stack,
+  Text,
+  Title,
+  useMantineTheme,
+  ActionIcon,
+  Drawer,
+  Divider,
+  Modal,
+  TextInput
+} from '@mantine/core'
 import {
   IconArrowLeft,
   IconBook2,
@@ -18,7 +31,6 @@ import { useMediaQuery } from '@mantine/hooks'
 import { useThemePreset } from '@/theme'
 import { useWorkoutStore } from '@/store/useWorkoutStore'
 import { api } from '@/api/client'
-import dayjs from 'dayjs'
 import { format } from 'date-fns'
 import { notifications } from '@mantine/notifications'
 import RevealAction from '@/components/RevealAction'
@@ -382,11 +394,16 @@ export default function HeaderBar({
           <LayoutGroup>
             <motion.div layout transition={{ type: 'spring', stiffness: 240, damping: 24, mass: 0.6 }}>
               <Group gap="sm" wrap="nowrap">
-                <DateInput
-                  value={selectedDate ? dayjs(selectedDate, 'YYYY-MM-DD').toDate() : null}
-                  onChange={onChangePicker}
+                <TextInput
+                  type="date"
+                  value={selectedDate ?? ''}
+                  onChange={async (event) => {
+                    const value = event.currentTarget.value || null
+                    if (value) {
+                      await onChangePicker(value)
+                    }
+                  }}
                   leftSection={<IconCalendar size={16} />}
-                  valueFormat="MMM DD, YYYY"
                   size="sm"
                   radius="md"
                   variant="filled"
@@ -395,10 +412,10 @@ export default function HeaderBar({
                     input: {
                       background: neutralButtonBackground,
                       border: `1px solid ${neutralBorderColor}`,
-                      color: baseTextColor
+                      color: baseTextColor,
+                      minWidth: isMobile ? 160 : 200
                     }
                   }}
-                  style={{ minWidth: isMobile ? 160 : 200 }}
                 />
                 <RevealAction
                   icon={day?.isRestDay ? <IconSunHigh size={16} /> : <IconMoonStars size={16} />}

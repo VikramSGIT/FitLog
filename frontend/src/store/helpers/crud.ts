@@ -58,14 +58,14 @@ export const deleteExercise = async (id: string) => {
   const doc = await db.exercises.findOne(id).exec()
   if (!doc) return
 
-  if (doc.serverId) {
-    await db.deleted_documents.insert({
-      id: doc.id,
-      serverId: doc.serverId,
-      collectionName: 'exercises',
+    if (doc.serverId) {
+      await db.deleted_documents.insert({
+        id: doc.id,
+        serverId: doc.serverId,
+        collectionName: 'exercises',
       deletedAt: new Date().toISOString()
     })
-  }
+    }
 
   await db.exercises.remove(id)
 };
@@ -128,21 +128,21 @@ export const updateSet = async (id: string, patch: Partial<Set>) => {
 export const updateRest = async (id: string, patch: Partial<Rest>) => {
   const db = await getDb()
   await db.rest_periods.update(id, { ...patch, isSynced: false })
-}
+  }
 
 export const deleteSet = async (id: string) => {
   const db = await getDb()
   const doc = await db.sets.findOne(id).exec()
   if (!doc) return
 
-  if (doc.serverId) {
-    await db.deleted_documents.insert({
-      id: doc.id,
-      serverId: doc.serverId,
-      collectionName: 'sets',
+    if (doc.serverId) {
+      await db.deleted_documents.insert({
+        id: doc.id,
+        serverId: doc.serverId,
+        collectionName: 'sets',
       deletedAt: new Date().toISOString()
     })
-  }
+    }
 
   await db.exercises.update(doc.exerciseId, { isSynced: false })
   await db.sets.remove(id)
@@ -160,10 +160,10 @@ export const deleteRest = async (id: string) => {
       collectionName: 'rests',
       deletedAt: new Date().toISOString()
     })
-  }
+    }
 
   await db.rest_periods.remove(id)
-}
+  }
 
 export const updateDay = async (id: string, patch: Partial<WorkoutDay>) => {
   const db = await getDb()

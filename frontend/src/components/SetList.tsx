@@ -1,18 +1,60 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { api, ExerciseEntry, RestPeriod, WorkoutSet } from '@/api/client'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { api } from '@/api/client'
 import { Exercise, Set, Rest } from '@/db/schema'
 import { useWorkoutStore } from '@/store/useWorkoutStore'
-import { ActionIcon, Group, Paper, Stack, Text, TextInput, Tooltip, useMantineTheme, Divider } from '@mantine/core'
+import { ActionIcon, Group, Paper, Stack, Text, TextInput, Tooltip, useMantineTheme } from '@mantine/core'
 import { IconTrash } from '@tabler/icons-react'
 import { DEFAULT_SURFACES, ThemeSurfaces } from '@/theme'
-import { useDebouncedSaveToRxDB } from '@/hooks/useDebouncedSaveToRxDB'
 
-function SetRow({ set, multiplier, baseWeightKg }: { set: Set; multiplier?: number | null; baseWeightKg?: number | null }) {
-  const { updateSet, deleteSet, isLoading: dayLoading, setSetDirty } = useWorkoutStore()
+const LOCAL_DB_COMMIT_DELAY_MS = 2000
+
+const parseRepsInput = (value: string): number | null => {
+  const trimmed = value.trim()
+  if (trimmed === '') return null
+  const numeric = Number(trimmed)
+  if (!Number.isFinite(numeric)) return null
+  const rounded = Math.round(numeric)
+  if (rounded <= 0) return null
+  return rounded
+}
+
+const parseWeightInput = (value: string): number | null => {
+  const trimmed = value.trim()
+  if (trimmed === '') return null
+  const numeric = Number(trimmed)
+  if (!Number.isFinite(numeric) || numeric < 0) return null
+  return Math.round(numeric * 100) / 100
+}
+
+const parseDurationInput = (value: string): number | null => {
+  const trimmed = value.trim()
+  if (trimmed === '') return null
+  const numeric = Number(trimmed)
+  if (!Number.isFinite(numeric) || numeric < 0) return null
+  return Math.round(numeric)
+}
+
+function SetRow({
+  set,
+  multiplier,
+  baseWeightKg
+}: Readonly<{ set: Set; multiplier?: number | null; baseWeightKg?: number | null }>) {
+  const { updateSet, deleteSet, isLoading: dayLoading } = useWorkoutStore()
   const [repsInput, setRepsInput] = useState<string>(() => String(set.reps))
   const [weightInput, setWeightInput] = useState<string>(() => String(set.weightKg))
+  const repsInputRef = useRef(repsInput)
+  const weightInputRef = useRef(weightInput)
+  const pendingCommitTimeout = useRef<ReturnType<typeof globalThis.setTimeout> | null>(null)
   const theme = useMantineTheme()
   const surfaces = (theme.other?.surfaces as ThemeSurfaces) ?? DEFAULT_SURFACES
+
+  useEffect(() => {
+    repsInputRef.current = repsInput
+  }, [repsInput])
+
+  useEffect(() => {
+    weightInputRef.current = weightInput
+  }, [weightInput])
 
   useEffect(() => {
     setRepsInput(String(set.reps))
@@ -22,20 +64,8 @@ function SetRow({ set, multiplier, baseWeightKg }: { set: Set; multiplier?: numb
     setWeightInput(String(set.weightKg))
   }, [set.weightKg])
 
-  useEffect(() => {
-    const repsValue = repsInput.trim() === '' ? null : Number.isFinite(Number(repsInput)) ? Math.round(Number(repsInput)) : null;
-    const weightValue = weightInput.trim() === '' ? null : Number.isFinite(Number(weightInput)) ? Number(weightInput) : null;
-    
-    const isDirty = repsValue !== set.reps || weightValue !== set.weightKg;
-    setSetDirty(set.id, isDirty);
-
-  }, [repsInput, weightInput, set.reps, set.weightKg, set.id, setSetDirty]);
-
-  const parsed = useMemo(() => {
-    const repsValue = repsInput.trim() === '' ? null : Number.isFinite(Number(repsInput)) ? Math.round(Number(repsInput)) : null
-    const weightValue = weightInput.trim() === '' ? null : Number.isFinite(Number(weightInput)) ? Number(weightInput) : null
-    return { reps: repsValue, weight: weightValue }
-  }, [repsInput, weightInput])
+  const parsedReps = useMemo(() => parseRepsInput(repsInput), [repsInput])
+  const parsedWeight = useMemo(() => parseWeightInput(weightInput), [weightInput])
 
   const effectiveWeight = useMemo(() => {
     if (multiplier == null && baseWeightKg == null) {
@@ -49,34 +79,70 @@ function SetRow({ set, multiplier, baseWeightKg }: { set: Set; multiplier?: numb
     return Math.round(eff * 100) / 100
   }, [weightInput, multiplier, baseWeightKg])
 
-  const save = useCallback(async (payload: { reps: number | null; weight: number | null }) => {
-    const currentSet = useWorkoutStore.getState().sets.find(s => s.tempId === set.id);
-    // If set has been deleted, we can't save.
-    if (!currentSet) {
-      return false;
+  const flushPendingCommit = useCallback(() => {
+    if (pendingCommitTimeout.current) {
+      globalThis.clearTimeout(pendingCommitTimeout.current)
+      pendingCommitTimeout.current = null
     }
+  }, [])
+
+  const commitSetChanges = useCallback(() => {
+    const repsValue = parseRepsInput(repsInputRef.current)
+    const weightValue = parseWeightInput(weightInputRef.current)
 
     const updates: Partial<Pick<Set, 'reps' | 'weightKg'>> = {}
-    if (payload.reps !== null && payload.reps > 0) {
-      const roundedReps = Math.round(payload.reps)
-      if (roundedReps !== currentSet.reps) {
-        updates.reps = roundedReps
-      }
+    if (repsValue !== null && repsValue > 0 && repsValue !== set.reps) {
+      updates.reps = repsValue
     }
-    if (payload.weight !== null && payload.weight >= 0) {
-      const roundedWeight = Math.round(payload.weight * 100) / 100
-      if (roundedWeight !== currentSet.weightKg) {
+    if (weightValue !== null && weightValue >= 0) {
+      const roundedWeight = Math.round(weightValue * 100) / 100
+      if (roundedWeight !== set.weightKg) {
         updates.weightKg = roundedWeight
       }
     }
-    if (!('reps' in updates) && !('weightKg' in updates)) {
-      return false
-    }
-    updateSet(set.id, updates)
-    return true
-  }, [updateSet, set.id])
 
-  useDebouncedSaveToRxDB(parsed, async (v) => save(v))
+    if (Object.keys(updates).length > 0) {
+      updateSet(set.id, updates)
+    }
+  }, [set.id, set.reps, set.weightKg, updateSet])
+
+  const scheduleDebouncedCommit = useCallback(() => {
+    flushPendingCommit()
+    pendingCommitTimeout.current = globalThis.setTimeout(() => {
+      pendingCommitTimeout.current = null
+      commitSetChanges()
+    }, LOCAL_DB_COMMIT_DELAY_MS)
+  }, [commitSetChanges, flushPendingCommit])
+
+  useEffect(() => {
+    return () => {
+      flushPendingCommit()
+      commitSetChanges()
+    }
+  }, [commitSetChanges, flushPendingCommit])
+
+  const hasPendingChanges = useMemo(() => {
+    const repsValue = parsedReps ?? null
+    const weightValue = parsedWeight ?? null
+    return repsValue !== set.reps || weightValue !== set.weightKg
+  }, [parsedReps, parsedWeight, set.reps, set.weightKg])
+
+  useEffect(() => {
+    if (hasPendingChanges) {
+      scheduleDebouncedCommit()
+      return () => {
+        flushPendingCommit()
+      }
+    }
+    return () => {
+      flushPendingCommit()
+    }
+  }, [hasPendingChanges, scheduleDebouncedCommit, flushPendingCommit])
+
+  const handleBlur = useCallback(() => {
+    flushPendingCommit()
+    commitSetChanges()
+  }, [commitSetChanges, flushPendingCommit])
 
   const onDelete = useCallback(async () => {
     if (dayLoading) return
@@ -99,6 +165,7 @@ function SetRow({ set, multiplier, baseWeightKg }: { set: Set; multiplier?: numb
           step={1}
           disabled={dayLoading}
               onChange={(e) => setRepsInput(e.currentTarget.value)}
+              onBlur={handleBlur}
               size="sm"
               radius="md"
               variant="filled"
@@ -118,6 +185,7 @@ function SetRow({ set, multiplier, baseWeightKg }: { set: Set; multiplier?: numb
           step="0.25"
           disabled={dayLoading}
               onChange={(e) => setWeightInput(e.currentTarget.value)}
+              onBlur={handleBlur}
               size="sm"
               radius="md"
               variant="filled"
@@ -151,37 +219,75 @@ function SetRow({ set, multiplier, baseWeightKg }: { set: Set; multiplier?: numb
   )
 }
 
-function RestRow({ rest }: { rest: Rest }) {
+function RestRow({ rest }: Readonly<{ rest: Rest }>) {
   const { updateRest, deleteRest, isLoading: dayLoading } = useWorkoutStore()
   const [durationInput, setDurationInput] = useState<string>(() => String(rest.durationSeconds))
+  const durationInputRef = useRef(durationInput)
+  const pendingCommitTimeout = useRef<ReturnType<typeof globalThis.setTimeout> | null>(null)
   const theme = useMantineTheme()
   const surfaces = (theme.other?.surfaces as ThemeSurfaces) ?? DEFAULT_SURFACES
+
+  useEffect(() => {
+    durationInputRef.current = durationInput
+  }, [durationInput])
 
   useEffect(() => {
     setDurationInput(String(rest.durationSeconds))
   }, [rest.durationSeconds])
 
-  const parsedDuration = useMemo(() => {
-    const value = durationInput.trim() === '' ? null : Number(durationInput)
-    if (value === null || Number.isNaN(value) || value < 0) {
-      return null
+  const parsedDuration = useMemo(() => parseDurationInput(durationInput), [durationInput])
+
+  const flushPendingCommit = useCallback(() => {
+    if (pendingCommitTimeout.current) {
+      globalThis.clearTimeout(pendingCommitTimeout.current)
+      pendingCommitTimeout.current = null
     }
-    return Math.round(value)
-  }, [durationInput])
+  }, [])
 
-  const save = useCallback(
-    async (value: number | null) => {
-      if (value === null) return false
-      const current = useWorkoutStore.getState().rests.find((r) => r.id === rest.id)
-      if (!current) return false
-      if (current.durationSeconds === value) return false
-      await updateRest(rest.id, { durationSeconds: value })
-      return true
-    },
-    [rest.id, updateRest]
-  )
+  const commitRest = useCallback(() => {
+    const durationValue = parseDurationInput(durationInputRef.current)
+    if (durationValue === null) return
+    if (durationValue !== rest.durationSeconds) {
+      updateRest(rest.id, { durationSeconds: durationValue })
+    }
+  }, [rest.durationSeconds, rest.id, updateRest])
 
-  useDebouncedSaveToRxDB(parsedDuration, async (value) => save(value))
+  useEffect(() => {
+    return () => {
+      flushPendingCommit()
+      commitRest()
+    }
+  }, [commitRest, flushPendingCommit])
+
+  const hasPendingChanges = useMemo(() => {
+    const durationValue = parsedDuration ?? null
+    return durationValue !== rest.durationSeconds
+  }, [parsedDuration, rest.durationSeconds])
+
+  const scheduleDebouncedCommit = useCallback(() => {
+    flushPendingCommit()
+    pendingCommitTimeout.current = globalThis.setTimeout(() => {
+      pendingCommitTimeout.current = null
+      commitRest()
+    }, LOCAL_DB_COMMIT_DELAY_MS)
+  }, [commitRest, flushPendingCommit])
+
+  useEffect(() => {
+    if (hasPendingChanges) {
+      scheduleDebouncedCommit()
+      return () => {
+        flushPendingCommit()
+      }
+    }
+    return () => {
+      flushPendingCommit()
+    }
+  }, [hasPendingChanges, scheduleDebouncedCommit, flushPendingCommit])
+
+  const handleBlur = useCallback(() => {
+    flushPendingCommit()
+    commitRest()
+  }, [commitRest, flushPendingCommit])
 
   const onDelete = useCallback(async () => {
     if (dayLoading) return
@@ -202,6 +308,7 @@ function RestRow({ rest }: { rest: Rest }) {
             step={5}
             disabled={dayLoading}
             onChange={(e) => setDurationInput(e.currentTarget.value)}
+            onBlur={handleBlur}
             size="sm"
             radius="md"
             variant="filled"
@@ -228,7 +335,7 @@ function RestRow({ rest }: { rest: Rest }) {
   )
 }
 
-export default function SetList({ exercise }: { exercise: Exercise }) {
+export default function SetList({ exercise }: Readonly<{ exercise: Exercise }>) {
   const allSets = useWorkoutStore((s) => s.sets)
   const allRests = useWorkoutStore((s) => s.rests)
   const entries = useMemo(() => {

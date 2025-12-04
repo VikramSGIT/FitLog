@@ -1,24 +1,24 @@
-import React, { useMemo, useState, useCallback, useEffect } from 'react'
+import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { api } from '@/api/client'
 import { Exercise } from '@/db/schema'
 import { useWorkoutStore } from '@/store/useWorkoutStore'
 import SetList from './SetList'
-import { useAutoSave } from '@/hooks/useAutoSave'
 import { ActionIcon, Badge, Button, Card, Divider, Group, Stack, Text, Title, Textarea, Tooltip, useMantineTheme } from '@mantine/core'
 import { IconPlus, IconTrash, IconNote, IconMoonStars } from '@tabler/icons-react'
 import { DEFAULT_SURFACES, ThemeSurfaces } from '@/theme'
-import { AUTO_SAVE_DELAY_MS } from '@/config'
 import { useMediaQuery } from '@mantine/hooks'
-
-const DEFAULT_REST_DURATION_SECONDS = 90
+import { DEFAULT_REST_DURATION_SECONDS, NOTE_COMMIT_DELAY_MS } from '@/config'
 
 export default function ExerciseItem({ exercise }: { exercise: Exercise }) {
   const navigate = useNavigate()
-  const { updateExercise, deleteExercise, addSet, addRest, activeDay, isLoading: dayLoading, sets } = useWorkoutStore()
+  const { updateExercise, deleteExercise, addSet, addRest, activeDay, isLoading: dayLoading, sets } =
+    useWorkoutStore()
   const isRestDay = activeDay?.isRestDay ?? false
   const [comment, setComment] = useState(exercise.comment || '')
+  const commentRef = useRef(comment)
+  const pendingCommentTimeout = useRef<ReturnType<typeof globalThis.setTimeout> | null>(null)
   const [showNote, setShowNote] = useState<boolean>(() => (exercise.comment || '').trim().length > 0)
   const [imageError, setImageError] = useState(false)
   const theme = useMantineTheme()
@@ -27,23 +27,59 @@ export default function ExerciseItem({ exercise }: { exercise: Exercise }) {
   const primaryText = theme.colorScheme === 'light' ? '#0f172a' : '#f8fafc'
   const isMobile = useMediaQuery('(max-width: 640px)')
 
-  // Check if exercise or any of its sets are unsynced
-  const exerciseSets = sets.filter(s => s.exerciseId === exercise.id)
-  const hasUnsyncedSets = exerciseSets.some(s => s.isSynced === false)
-  const isUnsaved = exercise.isSynced === false || hasUnsyncedSets
-
-  const saveComment = useCallback(async (value: string) => {
-    if ((exercise.comment || '') !== value) {
-      updateExercise(exercise.id, { comment: value })
-      return true
-    }
-    return false
-  }, [exercise.id, exercise.comment, updateExercise])
-  useAutoSave(comment, saveComment, AUTO_SAVE_DELAY_MS)
-
   useEffect(() => {
     setImageError(false)
   }, [exercise.catalogId])
+
+  useEffect(() => {
+    commentRef.current = comment
+  }, [comment])
+
+  useEffect(() => {
+    const incoming = exercise.comment || ''
+    if (incoming !== commentRef.current) {
+      setComment(incoming)
+      commentRef.current = incoming
+    }
+  }, [exercise.comment])
+
+  const commitComment = useCallback(() => {
+    const trimmed = commentRef.current.trim()
+    const baseline = (exercise.comment || '').trim()
+    if (trimmed !== baseline) {
+      updateExercise(exercise.id, { comment: trimmed })
+    }
+  }, [exercise.comment, exercise.id, updateExercise])
+
+  const flushCommentTimeout = useCallback(() => {
+    if (pendingCommentTimeout.current) {
+      globalThis.clearTimeout(pendingCommentTimeout.current)
+      pendingCommentTimeout.current = null
+    }
+  }, [])
+
+  const scheduleCommentCommit = useCallback(() => {
+    flushCommentTimeout()
+    pendingCommentTimeout.current = globalThis.setTimeout(() => {
+      pendingCommentTimeout.current = null
+      commitComment()
+    }, NOTE_COMMIT_DELAY_MS)
+  }, [commitComment, flushCommentTimeout])
+
+  useEffect(() => {
+    return () => {
+      flushCommentTimeout()
+    }
+  }, [flushCommentTimeout])
+
+  const handleCommentChange = useCallback(
+    (value: string) => {
+      setComment(value)
+      commentRef.current = value
+      scheduleCommentCommit()
+    },
+    [scheduleCommentCommit]
+  )
 
   async function onDelete() {
     if (dayLoading) return
@@ -62,27 +98,14 @@ export default function ExerciseItem({ exercise }: { exercise: Exercise }) {
 
   return (
     <>
-      {isUnsaved && (
-        <style>{`
-          @keyframes redGlow {
-            0%, 100% {
-              box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.3), 0 0 20px rgba(239, 68, 68, 0.2), 0 0 40px rgba(239, 68, 68, 0.1);
-            }
-            50% {
-              box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.5), 0 0 30px rgba(239, 68, 68, 0.4), 0 0 60px rgba(239, 68, 68, 0.2);
-            }
-          }
-        `}</style>
-      )}
       <Card
         withBorder
         radius="lg"
         padding="lg"
         style={{
           background: surfaces.card,
-          borderColor: isUnsaved ? '#ef4444' : surfaces.border,
-          backdropFilter: 'none',
-          animation: isUnsaved ? 'redGlow 2s ease-in-out infinite' : undefined
+          borderColor: surfaces.border,
+          backdropFilter: 'none'
         }}
       >
       <Stack gap="md">
@@ -121,11 +144,6 @@ export default function ExerciseItem({ exercise }: { exercise: Exercise }) {
                 >
                   {exercise.name}
                 </Title>
-                {isUnsaved && !isMobile && (
-                  <Text size="sm" c="red" fw={500} style={{ opacity: 0.9 }}>
-                    (unsaved)
-                  </Text>
-                )}
               </Group>
               <AnimatePresence initial={false}>
                 {showNote && (
@@ -141,7 +159,7 @@ export default function ExerciseItem({ exercise }: { exercise: Exercise }) {
                       label="Notes"
                       placeholder="Add cues, target intensity, or reminders..."
                       value={comment}
-                      onChange={(e) => setComment(e.currentTarget.value)}
+                      onChange={(e) => handleCommentChange(e.currentTarget.value)}
                       disabled={dayLoading}
                       radius="md"
                       minRows={2}
@@ -202,7 +220,7 @@ export default function ExerciseItem({ exercise }: { exercise: Exercise }) {
 
             <Group justify="space-between" align="center" wrap="wrap" gap="sm">
               <Title order={5}>Sets & Rest</Title>
-          <Group gap="sm">
+              <Group gap="sm">
                 <Button
                   onClick={handleAddSet}
                   disabled={isRestDay || dayLoading}
@@ -222,7 +240,7 @@ export default function ExerciseItem({ exercise }: { exercise: Exercise }) {
               leftSection={<IconMoonStars size={16} />}
             >
               Add Rest
-            </Button>
+                </Button>
               </Group>
             </Group>
 

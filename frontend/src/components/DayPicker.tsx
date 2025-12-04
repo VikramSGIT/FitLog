@@ -25,7 +25,6 @@ export default function DayPicker() {
   const setDayLoading = useWorkoutStore((s) => s.setDayLoading)
   const flush = useWorkoutStore((s) => s.flush)
   const saving = useWorkoutStore((s) => s.saving)
-  const lastSaveMode = useWorkoutStore((s) => s.lastSaveMode)
   const lastSavedAt = useWorkoutStore((s) => s.lastSavedAt)
   const dayLoading = useWorkoutStore((s) => s.dayLoading)
   const [selectedDate, setSelectedDate] = useState<string>(() => toInputDate(day?.workoutDate))
@@ -132,15 +131,6 @@ export default function DayPicker() {
       setRestUpdating(false)
     }
   }, [day, dayLoading, setDay, setDayLoading])
-
-  // Save status messaging moved to the HeaderBar button; no local message here.
-
-  const onManualSave = useCallback(() => {
-    if (saving === 'saving') return
-    flush('manual').catch(() => {
-      // flushAutoSaves sets saving state on error
-    })
-  }, [flush, saving])
 
   useEffect(() => {
     const currentDate = day?.workoutDate ? toInputDate(day.workoutDate) : null

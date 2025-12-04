@@ -21,7 +21,6 @@ import { api } from '@/api/client'
 import dayjs from 'dayjs'
 import { format } from 'date-fns'
 import { notifications } from '@mantine/notifications'
-import type { SaveMode } from '@/store/useWorkoutStore'
 import RevealAction from '@/components/RevealAction'
 import { formatDistanceToNow } from 'date-fns'
 import { LayoutGroup, motion } from 'framer-motion'
@@ -34,7 +33,6 @@ type HeaderBarProps = {
   onBrowseCatalog: () => void
   onSave: () => void
   saving?: SavingState
-  saveMode?: SaveMode | null
   lastSavedAt?: number | null
   onLogout: () => void
   userLabel?: string
@@ -46,7 +44,6 @@ export default function HeaderBar({
   onBrowseCatalog,
   onSave,
   saving = 'idle',
-  saveMode,
   lastSavedAt,
   onLogout,
   userLabel
@@ -76,18 +73,21 @@ export default function HeaderBar({
     isLoading: dayLoading,
     exercises,
     sets,
+    rests,
     deletedDocumentsCount,
     loadDay,
-    dirtySetIds,
+    pendingChanges
   } = useWorkoutStore()
-  const hasPendingChanges =
-    dirtySetIds.size > 0 ||
-    day?.isUnsynced ||
-    exercises.some(e => e.isUnsynced === true) ||
-    sets.some(s => s.isUnsynced === true) ||
-    deletedDocumentsCount > 0
 
   const [restUpdating, setRestUpdating] = useState(false)
+
+  const hasPendingChanges =
+    pendingChanges.hasAny ||
+    day?.isSynced === false ||
+    exercises.some((e) => e.isSynced === false) ||
+    sets.some((s) => s.isSynced === false) ||
+    rests.some((r) => r.isSynced === false) ||
+    deletedDocumentsCount > 0
   const [selectedDate, setSelectedDate] = useState<string>(() => {
     const d = day?.workoutDate
     if (!d) return format(new Date(), 'yyyy-MM-dd')
@@ -104,12 +104,12 @@ export default function HeaderBar({
       resetTimer.current = null
     }
     if (saving === 'saving') {
-      setLabel(saveMode === 'auto' ? 'Auto-saving...' : 'Saving...')
+      setLabel('Saving...')
       setPersistVariant(false)
       return
     }
     if (saving === 'saved') {
-      setLabel(saveMode === 'auto' ? 'Auto-saved' : 'Saved')
+      setLabel('Saved')
       setPersistVariant(true)
     } else if (saving === 'error') {
       setLabel('Save failed')
@@ -131,7 +131,7 @@ export default function HeaderBar({
         resetTimer.current = null
       }
     }
-  }, [saving, saveMode, lastSavedAt])
+  }, [saving])
 
   const lastSavedDistance = lastSavedAt ? formatDistanceToNow(lastSavedAt, { addSuffix: true }) : null
   const saveSingleLine =
@@ -140,7 +140,7 @@ export default function HeaderBar({
       : saving === 'saving'
       ? label
       : lastSavedDistance
-      ? `${saveMode === 'auto' ? 'Auto-saved' : 'Saved'} ${lastSavedDistance}`
+      ? `Saved ${lastSavedDistance}`
       : 'Save'
   const saveHoverLabel = <Text size="sm">{saveSingleLine}</Text>
 
@@ -237,9 +237,8 @@ export default function HeaderBar({
     const wasSaving = prevSavingRef.current === 'saving'
     const savedByTimestamp = !!lastSavedAt && lastSavedAt !== prevLastSavedAtRef.current && saving !== 'saving' && wasSaving
     if (savedByFlag || (savedByTimestamp && saveNotifIdRef.current)) {
-      const title = saveMode === 'auto' ? 'Auto-saved' : 'Saved'
-      const message =
-        saveMode === 'auto' ? 'Your changes were saved automatically.' : 'Your changes were saved successfully.'
+      const title = 'Saved'
+      const message = 'Your changes were saved successfully.'
       if (saveNotifIdRef.current) {
         notifications.update({
           id: saveNotifIdRef.current,
@@ -277,7 +276,7 @@ export default function HeaderBar({
     }
 
     prevSavingRef.current = saving
-  }, [saving, saveMode, lastSavedAt])
+  }, [saving, lastSavedAt])
 
   const onChangePicker = async (value: Date | null) => {
     if (!value) return
@@ -424,6 +423,9 @@ export default function HeaderBar({
                   label={saveHoverLabel}
                   ariaLabel={label}
                   onClick={async () => {
+                    if (saving === 'saving' || !hasPendingChanges) {
+                      return
+                    }
                     // show a quick feedback immediately
                     if (!saveNotifIdRef.current) {
                       const id = notifications.show({
@@ -435,8 +437,15 @@ export default function HeaderBar({
                       })
                       saveNotifIdRef.current = String(id)
                     }
+                    const savePromise = onSave()
+                    const { saving: savingAfterDispatch } = useWorkoutStore.getState()
+                    console.log('[save] Manual save triggered', {
+                      hasPendingChanges,
+                      savingBeforeDispatch: saving,
+                      savingAfterDispatch
+                    })
                     try {
-                      await onSave()
+                      await savePromise
                     } catch {
                       // Error is handled by the store's saveStatus
                     }

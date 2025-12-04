@@ -5,15 +5,15 @@ const API_BASE = import.meta.env?.VITE_API_BASE_URL || ''
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers)
   headers.set('Content-Type', 'application/json')
-  const res = await fetch(`${API_BASE}${path}`, {
-    credentials: 'include',
+    const res = await fetch(`${API_BASE}${path}`, {
+      credentials: 'include',
     headers,
-    ...init
+      ...init
   })
-  if (!res.ok) {
+    if (!res.ok) {
     const text = await res.text().catch(() => '')
     throw new Error(text || `HTTP ${res.status}`)
-  }
+    }
   if (res.status === 204) return undefined as unknown as T
   const data = (await res.json()) as T
   return data

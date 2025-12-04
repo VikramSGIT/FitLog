@@ -32,7 +32,6 @@ export default function ExerciseDetailsPage() {
   const isMobile = useMediaQuery('(max-width: 640px)')
   const flush = useWorkoutStore((s) => s.flush)
   const saving = useWorkoutStore((s) => s.saving)
-  const lastSaveMode = useWorkoutStore((s) => s.lastSaveMode)
   const lastSavedAt = useWorkoutStore((s) => s.lastSavedAt)
   const setDay = useWorkoutStore((s) => s.setDay)
   const setDayLoading = useWorkoutStore((s) => s.setDayLoading)
@@ -59,7 +58,7 @@ export default function ExerciseDetailsPage() {
   // Check if there are unsaved changes for the current day and this catalog ID
   const hasUnsavedChanges = useMemo(() => {
     if (!day || !id || opLog.length === 0) return false
-
+    
     // Check if opLog contains operations for exercises matching this catalog ID
     const dayId = day.id
     const hasRelevantOps = opLog.some((op) => {
@@ -288,9 +287,8 @@ export default function ExerciseDetailsPage() {
       {!isMobile && (
         <HeaderBar
           onBrowseCatalog={() => navigate('/catalog')}
-          onSave={() => flush('manual')}
+          onSave={() => flush()}
           saving={saving}
-          saveMode={lastSaveMode}
           lastSavedAt={lastSavedAt}
           onLogout={async () => {
             try {

@@ -66,7 +66,7 @@ export const sync = async (get: () => WorkoutState, set: (state: Partial<Workout
   if (get().isSyncing) {
     return
   }
-  set({ isSyncing: true, saveStatus: 'saving' })
+  set({ isSyncing: true, saveStatus: 'saving', saving: 'saving' })
 
   await ensureEpoch()
 
@@ -137,7 +137,7 @@ export const sync = async (get: () => WorkoutState, set: (state: Partial<Workout
         position: ex.position,
         comment: ex.comment ?? undefined
       })
-    }
+      }
 
     // Sets (creations)
     for (const set of unsyncedSets) {
@@ -158,10 +158,10 @@ export const sync = async (get: () => WorkoutState, set: (state: Partial<Workout
 
     // Updates
     for (const day of unsyncedDays) {
-      if (day.serverId) {
+        if (day.serverId) {
         ops.push({ type: 'updateDay', dayId: day.serverId, isRestDay: day.isRestDay })
+        }
       }
-    }
     for (const ex of unsyncedExercises) {
       if (ex.serverId) {
         ops.push({
@@ -239,11 +239,12 @@ export const sync = async (get: () => WorkoutState, set: (state: Partial<Workout
       await db.deleted_documents.bulkRemove(deletedDocs.map(d => d.id))
     }
 
-    set({ saveStatus: 'saved' })
+    set({ saveStatus: 'saved', saving: 'saved', lastSavedAt: Date.now() })
   } catch (error) {
     console.error('Sync failed', error)
-    set({ saveStatus: 'error' })
+    set({ saveStatus: 'error', saving: 'error' })
   } finally {
     set({ isSyncing: false })
+    await get().refreshPendingChanges()
   }
 }

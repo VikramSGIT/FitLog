@@ -114,7 +114,6 @@ export default function CatalogCreatePage() {
 
   const flush = useWorkoutStore((s) => s.flush)
   const saving = useWorkoutStore((s) => s.saving)
-  const lastSaveMode = useWorkoutStore((s) => s.lastSaveMode)
   const lastSavedAt = useWorkoutStore((s) => s.lastSavedAt)
 
   const [form, setForm] = useState<FormState>(INITIAL_FORM)
@@ -409,12 +408,11 @@ const updateField = <K extends keyof FormState>(field: K, value: FormState[K]) =
       }}
     >
       {!isMobile && (
-      <HeaderBar
-        onBrowseCatalog={() => navigate('/catalog')}
-        onSave={() => flush('manual')}
-        saving={saving as any}
-        saveMode={lastSaveMode}
-        lastSavedAt={lastSavedAt}
+        <HeaderBar
+          onBrowseCatalog={() => navigate('/catalog')}
+          onSave={() => flush()}
+          saving={saving as any}
+          lastSavedAt={lastSavedAt}
         onLogout={async () => {
           try {
             await api.logout()

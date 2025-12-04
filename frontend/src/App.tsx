@@ -34,7 +34,7 @@ function Home() {
   const nav = useNavigate()
   const theme = useMantineTheme()
   const { preset, selectPreset, presets } = useThemePreset()
-  const { init, cleanup, sync, saveStatus, saveMode } = useWorkoutStore()
+  const { init, cleanup, sync, saveStatus } = useWorkoutStore()
 
   const surfaces = useMemo<ThemeSurfaces>(
     () => (theme.other?.surfaces as ThemeSurfaces) ?? DEFAULT_SURFACES,
@@ -221,7 +221,6 @@ function Home() {
             onBrowseCatalog={() => nav('/catalog')}
             onSave={sync}
             saving={saveStatus}
-            saveMode={saveMode}
             onLogout={onLogout}
             userLabel={email || 'Account'}
           />

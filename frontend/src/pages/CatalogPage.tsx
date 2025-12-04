@@ -24,7 +24,6 @@ export default function CatalogPage() {
   const accentGradient = (theme.other?.accentGradient as string) ?? 'linear-gradient(135deg, #8f5afc 0%, #5197ff 100%)'
   const flush = useWorkoutStore((s) => s.flush)
   const saving = useWorkoutStore((s) => s.saving)
-  const lastSaveMode = useWorkoutStore((s) => s.lastSaveMode)
   const lastSavedAt = useWorkoutStore((s) => s.lastSavedAt)
 
   return (
@@ -43,9 +42,8 @@ export default function CatalogPage() {
       {!isMobile && (
       <HeaderBar
         onBrowseCatalog={() => navigate('/catalog')}
-        onSave={() => flush('manual')}
+        onSave={() => flush()}
         saving={saving as any}
-        saveMode={lastSaveMode}
         lastSavedAt={lastSavedAt}
         onLogout={async () => {
           try {
